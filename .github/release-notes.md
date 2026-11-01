@@ -1,32 +1,32 @@
-Mini-Radar für Aion 2 (Global): Hidden Cubes mit Entfernung, Richtung und Höhe sowie gegnerische Spieler mit Fraktion und vorläufigem PvP-/Abyss-Rang. Es liest den Netzwerkverkehr von Aion 2 nur passiv mit, liest keinen Speicher, verändert nichts am Spiel und sendet nichts an das Spiel.
+Mini-radar for Aion 2 (Global): hidden cubes with distance, direction and height, and enemy players with faction and a provisional PvP/Abyss rank. It passively reads Aion 2 network traffic only: no memory reading, no changes to the game, and nothing is sent to the game.
 
-## Neu in {{VERSION}}
+## What's new in {{VERSION}}
 
 {{CHANGES}}
 
 ## Download
 
-**`Cube.Radar.exe`** unten unter „Assets“ herunterladen und doppelklicken. Eine Installation ist nicht nötig, .NET ist enthalten. Laufendes Radar vorher über das Tray-Symbol beenden.
+Download **`Cube.Radar.exe`** under Assets below and double-click it. No installation is required; .NET is included. Quit a running radar from the tray icon first.
 
-**Wechsel von einer älteren Version:** Diese EXE gegebenenfalls einmal manuell herunterladen; ältere Builds prüfen noch das ursprüngliche Repository. Ab 0.9.0 stammen Updates aus diesem Repository und werden nur auf Bestätigung installiert.
+**Upgrading from an older version:** download this exe once by hand. Older builds still check the original repository. From 0.9.3, updates come from this repository and are installed only after you confirm.
 
-**Gegneranzeige:** Unter **⚙ → Gegner → Eigene Fraktion** Elyos oder Asmodier wählen, falls „Automatisch“ noch keine eigene Charakterinfo empfangen hat. `*` kennzeichnet angenommene Rangnamen, `~`/`≈` eine geschätzte Entfernung. Die Rangfolge ist noch keine vollständig verifizierte Tabelle.
+**Enemy display:** under **Settings → Enemies → Own faction**, choose Elyos or Asmodian if Automatic has not received your character yet. `*` marks an assumed rank name, `~`/`≈` an estimated distance. The rank order is not a fully verified table yet.
 
-Ab **0.9.1** steht die Klasse **1–9 direkt im roten Symbol**, **T** für Trainee und **?** für eine unbekannte Klasse. Name und Entfernung stehen daneben; der volle Rang bleibt in der Liste.
+From **0.9.1**, class **1–9** is drawn inside the red marker, **T** means Trainee and **?** an unknown class. Name and distance sit beside it; the full rank stays in the list.
 
-- **Voraussetzungen:** Windows 10/11 (64 Bit), [Npcap](https://npcap.com) (Installer mit Standardoptionen), Aion 2 Global im Fenster- oder randlosen Vollbildmodus
-- **SmartScreen:** Die exe ist nicht signiert. Meldet Windows eine unbekannte App: „Weitere Informationen“ → „Trotzdem ausführen“.
-- **Bedienung:** siehe die [Anleitung](https://github.com/{{REPO}}/blob/{{TAG}}/docs/ANLEITUNG.md)
+- **Requirements:** Windows 10/11 (64-bit), [Npcap](https://npcap.com) (installer with the default options), Aion 2 Global in windowed or borderless fullscreen
+- **SmartScreen:** the exe is not signed. If Windows reports an unknown app: More info → Run anyway.
+- **How to use it:** see the [guide](https://github.com/{{REPO}}/blob/{{TAG}}/docs/ANLEITUNG.md) (still in German)
 
-> **Achtung:** Laut einem anderen Tool-Autor stuft der NCSOFT-Support Software, die Spieldaten mitliest, als Verstoß gegen die Nutzungsbedingungen ein. Die Nutzung erfolgt auf eigenes Risiko.
+> **Warning:** According to another tool author, NCSOFT support treats software that reads game data as a terms-of-service violation. Use at your own risk.
 
-## Prüfsumme
+## Checksum
 
-SHA-256 von `Cube.Radar.exe`:
+SHA-256 of `Cube.Radar.exe`:
 `{{SHA256}}`
 
-Gebaut von GitHub Actions aus dem Stand [`{{TAG}}`](https://github.com/{{REPO}}/tree/{{TAG}}).
+Built by GitHub Actions from [`{{TAG}}`](https://github.com/{{REPO}}/tree/{{TAG}}).
 
-## Quelltext
+## Source
 
-GPL-3.0. „Source code“ unten unter „Assets“ ist genau der Stand dieser Version.
+GPL-3.0. The Source code asset below is exactly this version.
