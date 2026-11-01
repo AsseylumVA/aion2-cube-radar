@@ -20,7 +20,8 @@ function browser() {
       return nodes.get(id);
     },
   };
-  const context = vm.createContext({ document, console,
+  const i18n = JSON.parse(fs.readFileSync(path.join(__dirname, '../src/CubeRadar.Cli/wwwroot/i18n.json'), 'utf8'));
+  const context = vm.createContext({ document, console, I18N: i18n,
     localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
     window: { addEventListener() {}, devicePixelRatio: 1 }, location: { host: '127.0.0.1' },
     getComputedStyle: () => ({ getPropertyValue: () => '#abcdef' }),
@@ -66,13 +67,13 @@ test('unknown own faction requests selection instead of showing alleged enemies'
   const b = browser();
   b.update([contact({ isEnemy: null })], 'Unknown');
   assert.equal(b.document.getElementById('enemy-list').innerHTML, '');
-  assert.match(b.document.getElementById('enemy-empty').textContent, /Eigene Fraktion noch unbekannt/);
+  assert.match(b.document.getElementById('enemy-empty').textContent, /Своя фракция ещё неизвестна/);
 });
 
 test('stale contacts remain labelled in the list but get no live enemy map label', () => {
   const b = browser();
   b.update([contact({ positionStale: true, positionAgeMs: 12000 })]);
-  assert.match(b.document.getElementById('enemy-list').innerHTML, /nicht frisch/);
+  assert.match(b.document.getElementById('enemy-list').innerHTML, /устарела/);
   assert.equal(b.calls.filter(c => c[0] === 'fillText' && String(c[1]).includes('EnemyB')).length, 0);
 });
 
@@ -94,7 +95,7 @@ test('enemy display can be disabled without disabling cubes', () => {
   b.update([contact()]);
   b.document.getElementById('enemies').listeners.click();
   assert.equal(b.document.getElementById('enemy-list').innerHTML, '');
-  assert.match(b.document.getElementById('enemy-empty').textContent, /ausgeschaltet/);
+  assert.match(b.document.getElementById('enemy-empty').textContent, /выключен/);
   assert.equal(b.document.getElementById('count').textContent, '');
 });
 

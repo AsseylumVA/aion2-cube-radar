@@ -58,8 +58,7 @@ internal static class RadarCommand
         }
         if (replay is null && !LiveSniffer.IsNpcapInstalled())
         {
-            Tell("Npcap ist nicht installiert.\n\nBitte von https://npcap.com herunterladen, mit den Standardoptionen installieren " +
-                 "und Cube Radar danach neu starten.");
+            Tell(UiText.T("app.npcap"));
             return 2;
         }
 
@@ -70,8 +69,7 @@ internal static class RadarCommand
         if (replay is null && !firstInstance) firstInstance = WaitFor(instance, TimeSpan.FromSeconds(afterUpdate ? 60 : 3));
         int AlreadyRunning()
         {
-            Tell("Cube Radar läuft bereits.\n\nBeenden: Rechtsklick auf das Radar-Symbol unten rechts in der Taskleiste → „Beenden“ " +
-                 "(oder ⚙ im Overlay → „Radar beenden“).");
+            Tell(UiText.T("app.alreadyRunning"));
             return 3;
         }
         if (replay is null && !firstInstance) return AlreadyRunning();
@@ -94,7 +92,7 @@ internal static class RadarCommand
             (replay is null ? "live_" : "replay_") + stamp);
         var engine = new RadarEngine(cfg, store, spots);
         try { engine.SetOwnFaction(Opt("--faction") ?? settings.OwnFaction); }
-        catch (FormatException ex) { Tell(ex.Message); return 2; }
+        catch (FormatException) { Tell(UiText.T("faction.invalid")); return 2; }
         if (Opt("--faction") is not null)
         {
             settings.OwnFaction = engine.Snapshot().FactionSetting;
@@ -142,9 +140,16 @@ internal static class RadarCommand
             npcapDropped = sniffer?.Health()?.Dropped,
             recording = record ? Path.Combine(dir!, "raw.pcapng") : null,
         };
-        object State() => new { radar = engine.Snapshot(), capture = CaptureView(), wallMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() };
+        object State() => new
+        {
+            radar = Localize(engine.Snapshot()),
+            capture = CaptureView(),
+            wallMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            lang = UiText.Language,
+        };
 
         using var hub = new SnapshotHub(() => JsonSerializer.SerializeToUtf8Bytes(State(), Json));
+        UiText.Changed += hub.Kick;
         // Cancelled when the radar closes: an open web view would otherwise hold the web server for its full 30 s
         // shutdown timeout (the browser never closes its WebSocket by itself).
         using var closing = new CancellationTokenSource();
@@ -216,7 +221,18 @@ internal static class RadarCommand
         {
             var body = await JsonSerializer.DeserializeAsync<Dictionary<string, string>>(ctx.Request.Body);
             try { SetFaction(body?.GetValueOrDefault("faction") ?? ""); }
-            catch (FormatException ex) { return Results.BadRequest(ex.Message); }
+            catch (FormatException) { return Results.BadRequest(UiText.T("faction.invalid")); }
+            return Results.Ok();
+        });
+        app.MapPost("/api/lang", async (HttpContext ctx) =>
+        {
+            var body = await JsonSerializer.DeserializeAsync<Dictionary<string, string>>(ctx.Request.Body);
+            var lang = body?.GetValueOrDefault("lang") ?? "";
+            if (!UiText.IsLanguage(lang)) return Results.BadRequest();
+            settings.Language = lang;
+            settings.Save();
+            UiText.Set(lang);
+            hub.Kick();
             return Results.Ok();
         });
         app.MapGet("/api/export/sightings.json", () => Results.Text(store.Export(json: true), "application/json"));
@@ -380,6 +396,22 @@ internal static class RadarCommand
         Log($"shutdown in {shutdown.ElapsedMilliseconds} ms ({string.Join(", ", steps)})");
         if (dir is not null) Console.WriteLine($"session: {dir}");
         return 0;
+    }
+
+    /// <summary>Self-check warnings leave the engine as stable codes and are turned into the active language here.</summary>
+    private static RadarSnapshot Localize(RadarSnapshot snapshot) => snapshot with { Warnings = snapshot.Warnings.Select(WarningText).ToList() };
+
+    private static string WarningText(string raw)
+    {
+        if (raw == "self-id") return UiText.T("warn.selfId");
+        var parts = raw.Split('|');
+        if (parts.Length >= 5 && parts[0] == "missing")
+        {
+            var hint = UiText.T("warn.hint." + parts[1]);
+            if (hint.StartsWith("warn.hint.", StringComparison.Ordinal)) hint = parts[4];
+            return UiText.T("warn.missing", parts[1], parts[2], parts[3], hint);
+        }
+        return raw;
     }
 
     private static void Log(string message) => Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] {message}");

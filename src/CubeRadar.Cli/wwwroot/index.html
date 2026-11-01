@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="de">
+<html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -15,11 +15,11 @@
   <main>
     <section class="view">
       <div class="toolbar">
-        <div class="seg" role="group" aria-label="Ansicht">
-          <button data-mode="radar" class="on">Radar</button>
-          <button data-mode="map">Karte</button>
+        <div class="seg" role="group" aria-label="View">
+          <button data-mode="radar" class="on" data-i18n="web.radar">Радар</button>
+          <button data-mode="map" data-i18n="web.map">Карта</button>
         </div>
-        <label>Reichweite
+        <label><span data-i18n="web.range">Дальность</span>
           <select id="range">
             <option value="50">50 m</option>
             <option value="100">100 m</option>
@@ -28,7 +28,7 @@
             <option value="1000">1 km</option>
           </select>
         </label>
-        <label title="Welche Weltachse zeigt nach Norden? Laut Cube Watch −Y; gilt auch für das Overlay.">Norden
+        <label id="north-label"><span data-i18n="web.north">Север</span>
           <select id="north">
             <option value="-y">−Y</option>
             <option value="+y">+Y</option>
@@ -37,43 +37,49 @@
           </select>
         </label>
         <span class="spacer"></span>
-        <label>Ich spiele
-          <select id="faction">
-            <option value="Auto">Automatisch</option>
-            <option value="Elyos">Elyos</option>
-            <option value="Asmodian">Asmodier</option>
+        <label><span data-i18n="web.language">Язык</span>
+          <select id="lang">
+            <option value="ru">Русский</option>
+            <option value="en">English</option>
           </select>
         </label>
-        <button id="enemies" class="toggle on">Gegner an</button>
-        <button id="sound" class="toggle">Ton aus</button>
-        <button id="notify" class="toggle">Hinweise aus</button>
+        <label><span data-i18n="web.iPlay">Я играю</span>
+          <select id="faction">
+            <option value="Auto" data-i18n="web.auto">Автоматически</option>
+            <option value="Elyos" data-i18n="faction.elyos">Элийцы</option>
+            <option value="Asmodian" data-i18n="faction.asmodian">Асмодиане</option>
+          </select>
+        </label>
+        <button id="enemies" class="toggle on"></button>
+        <button id="sound" class="toggle"></button>
+        <button id="notify" class="toggle"></button>
       </div>
       <canvas id="canvas" aria-label="Radar"></canvas>
       <div class="legend">
-        <span><i class="tri">▲</i>über dir · <i class="tri">■</i>gleiche Höhe · <i class="tri">▼</i>unter dir</span>
-        <span><i class="sw visible"></i>sichtbar</span>
-        <span><i class="sw out"></i>außer Sicht</span>
-        <span><i class="sw opening"></i>wird geöffnet</span>
-        <span><i class="sw gone"></i>geöffnet / weg</span>
-        <span><i class="sw me"></i>du</span>
-        <span><i class="sw enemy"></i>Gegner: 1–9 = Klasse · T = Trainee · ? = unbekannt</span>
-        <span><i class="sw spot"></i>mögliche Spots</span>
-        <span><i class="sw hist"></i>früher gesehen</span>
+        <span><i class="tri">▲</i> <span data-i18n="web.legendUp"></span> · <i class="tri">■</i> <span data-i18n="web.legendLevel"></span> · <i class="tri">▼</i> <span data-i18n="web.legendDown"></span></span>
+        <span><i class="sw visible"></i><span data-i18n="web.legendVisible"></span></span>
+        <span><i class="sw out"></i><span data-i18n="web.legendOut"></span></span>
+        <span><i class="sw opening"></i><span data-i18n="web.legendOpening"></span></span>
+        <span><i class="sw gone"></i><span data-i18n="web.legendGone"></span></span>
+        <span><i class="sw me"></i><span data-i18n="web.legendYou"></span></span>
+        <span><i class="sw enemy"></i><span data-i18n="web.legendEnemy"></span></span>
+        <span><i class="sw spot"></i><span data-i18n="web.legendSpots"></span></span>
+        <span><i class="sw hist"></i><span data-i18n="web.legendHist"></span></span>
       </div>
     </section>
     <aside>
       <section class="enemy-section">
-        <div class="listhead"><h2>Gegner <span id="enemy-count"></span></h2></div>
+        <div class="listhead"><h2><span data-i18n="web.enemies">Противники</span> <span id="enemy-count"></span></h2></div>
         <ol id="enemy-list" class="list"></ol>
-        <p id="enemy-empty" class="empty">Wartet auf Spielerpakete.</p>
-        <p class="rank-note">* Angenommene Rangfolge: kleinere Codes = höherer Rang. 19/17/16/15/14 per Screenshot beobachtet.</p>
+        <p id="enemy-empty" class="empty" data-i18n="web.enemyWait"></p>
+        <p class="rank-note" data-i18n="web.rankNote"></p>
       </section>
       <div class="listhead">
-        <h2>Cubes <span id="count"></span></h2>
+        <h2><span data-i18n="web.cubes">Кубы</span> <span id="count"></span></h2>
         <span class="exports">Export: <a href="/api/export/sightings.csv" download="sightings.csv">CSV</a> · <a href="/api/export/sightings.json" download="sightings.json">JSON</a></span>
       </div>
       <ol id="list" class="list"></ol>
-      <p id="empty" class="empty">Noch kein Cube in Sichtweite. Cubes werden ab etwa 100 m gemeldet.</p>
+      <p id="empty" class="empty" data-i18n="web.empty"></p>
     </aside>
   </main>
   <script src="app.js"></script>

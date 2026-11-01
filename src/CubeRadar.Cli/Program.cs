@@ -14,6 +14,7 @@ Console.OutputEncoding = System.Text.Encoding.UTF8;
 if (args is [Updater.InstallFlag, .. var install]) return Updater.RunInstaller(install);
 
 AppPaths.Init();
+UiText.LoadInstalled();
 var book = File.Exists(AppPaths.Config("opcodes.json")) ? OpcodeBook.Load(AppPaths.Config("opcodes.json")) : OpcodeBook.Empty;
 
 // The updater restarts the new exe with the previous arguments plus --after-update.
@@ -40,7 +41,7 @@ try
 }
 catch (Exception ex) when (!NativeConsole.HasConsole && ex is not FormatException)
 {
-    NativeConsole.Notify($"Cube Radar wurde wegen eines Fehlers beendet:\n\n{ex.GetType().Name}: {ex.Message}\n\nDaten und Log: {AppPaths.DataRoot}");
+    NativeConsole.Notify(UiText.T("crash.fatal", ex.GetType().Name, ex.Message, AppPaths.DataRoot));
     return 1;
 }
 catch (FormatException ex)

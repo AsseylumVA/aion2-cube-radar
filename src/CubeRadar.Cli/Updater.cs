@@ -35,6 +35,11 @@ internal sealed class Updater : IDisposable
     private readonly bool _autoInstall;
     private readonly CancellationTokenSource _cts = new();
     private readonly SemaphoreSlim _busy = new(1, 1);
+    private Phase _phase;
+    private string _arg = "";
+    private string _reasonKey = "";
+
+    private enum Phase { NotChecked, Off, Checking, Available, UpToDate, CheckFailed, Downloading, Failed, NoInstall }
 
     public Updater(RadarSettings settings, string exe, Action quit)
     {
@@ -47,7 +52,7 @@ internal sealed class Updater : IDisposable
         var api = Environment.GetEnvironmentVariable("CUBERADAR_UPDATE_API") is { Length: > 0 } url ? new Uri(url) : UpdateClient.GitHubLatest;
         _client = new UpdateClient(_http, api);
         _autoInstall = Environment.GetEnvironmentVariable("CUBERADAR_UPDATE_AUTOINSTALL") == "1";
-        State = settings.UpdateCheckEnabled ? "Noch nicht geprüft." : "Automatische Suche ist aus.";
+        _phase = settings.UpdateCheckEnabled ? Phase.NotChecked : Phase.Off;
     }
 
     public static Version Current { get; } = UpdateClient.Normalize(typeof(Updater).Assembly.GetName().Version ?? new Version(0, 0, 0));
@@ -55,8 +60,19 @@ internal sealed class Updater : IDisposable
     /// <summary>A newer release, once a check found one.</summary>
     public ReleaseInfo? Available { get; private set; }
 
-    /// <summary>What the updater is doing or found, for the settings window.</summary>
-    public string State { get; private set; }
+    /// <summary>What the updater is doing or found, for the settings window. Follows the active interface language.</summary>
+    public string State => _phase switch
+    {
+        Phase.Off => UiText.T("updater.off"),
+        Phase.Checking => UiText.T("updater.checking"),
+        Phase.Available => UiText.T("updater.available", _arg),
+        Phase.UpToDate => UiText.T("updater.current"),
+        Phase.CheckFailed => UiText.T("updater.checkFailed"),
+        Phase.Downloading => UiText.T("updater.downloading", _arg),
+        Phase.Failed => UiText.T("updater.failed", _reasonKey.Length > 0 ? UiText.T(_reasonKey, _arg) : _arg),
+        Phase.NoInstall => UiText.T("updater.none"),
+        _ => UiText.T("updater.notChecked"),
+    };
 
     public bool Installing { get; private set; }
 
@@ -97,7 +113,7 @@ internal sealed class Updater : IDisposable
         _settings.Save();
         Log($"update check {(on ? "on" : "off")}");
         if (on) _ = CheckAsync();
-        else if (Available is null) SetState("Automatische Suche ist aus.");
+        else if (Available is null) Set(Phase.Off);
     }
 
     public async Task CheckAsync()
@@ -106,7 +122,7 @@ internal sealed class Updater : IDisposable
         ReleaseInfo? found = null;
         try
         {
-            SetState("Suche nach Updates …");
+            Set(Phase.Checking);
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
             timeout.CancelAfter(CheckTimeout);
             var latest = await _client.LatestAsync(timeout.Token);
@@ -114,20 +130,20 @@ internal sealed class Updater : IDisposable
             {
                 if (Available?.Version != latest.Version) found = latest;
                 Available = latest;
-                SetState($"Version {latest.Version.ToString(3)} ist verfügbar.");
+                Set(Phase.Available, latest.Version.ToString(3));
                 Log($"update: {latest.Tag} available{(latest.Installable ? "" : " (no verifiable exe, only the release page)")}");
             }
             else
             {
                 Available = null;
-                SetState("Du hast die neueste Version.");
+                Set(Phase.UpToDate);
                 Log("update: up to date");
             }
         }
         catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or JsonException)
         {
             if (_cts.IsCancellationRequested) return;
-            SetState("Prüfung fehlgeschlagen (keine Verbindung zu GitHub?).");
+            Set(Phase.CheckFailed);
             Log($"update check failed: {ex.GetType().Name}: {ex.Message}");
         }
         finally
@@ -145,13 +161,17 @@ internal sealed class Updater : IDisposable
     /// <returns>Null when the installer was started; otherwise what went wrong, for the user.</returns>
     public async Task<string?> InstallAsync()
     {
-        if (Available is not { Installable: true } release) return "Es gibt kein installierbares Update.";
+        if (Available is not { Installable: true } release)
+        {
+            Set(Phase.NoInstall);
+            return State;
+        }
         await _busy.WaitAsync();
         var staged = SelfReplace.StagingPath(_exe);
         try
         {
             Installing = true;
-            SetState($"Lade Version {release.Version.ToString(3)} herunter …");
+            Set(Phase.Downloading, release.Version.ToString(3));
             Log($"update: downloading {release.AssetUrl}");
             using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token))
             {
@@ -170,18 +190,17 @@ internal sealed class Updater : IDisposable
         {
             Installing = false;
             SelfReplace.CleanUp(_exe);
-            var reason = ex switch
+            var (arg, key) = ex switch
             {
-                UpdateException => ex.Message,
-                UnauthorizedAccessException => "Im Ordner der exe darf Cube Radar nicht schreiben (z. B. unter „Programme“).",
-                OperationCanceledException => "Der Download hat zu lange gedauert.",
-                HttpRequestException => "Keine Verbindung zu GitHub.",
-                System.ComponentModel.Win32Exception => $"Die neue Version ließ sich nicht starten ({ex.Message}).",
-                _ => ex.Message,
+                UnauthorizedAccessException => ("", "updater.noWrite"),
+                OperationCanceledException => ("", "updater.timeout"),
+                HttpRequestException => ("", "updater.noGithub"),
+                System.ComponentModel.Win32Exception => (ex.Message, "updater.startFailed"),
+                _ => (ex.Message, ""),
             };
-            SetState($"Update fehlgeschlagen: {reason}");
+            Set(Phase.Failed, arg, key);
             Log($"update failed: {ex.GetType().Name}: {ex.Message}");
-            return reason;
+            return State;
         }
         finally
         {
@@ -198,6 +217,8 @@ internal sealed class Updater : IDisposable
     /// </summary>
     public static int RunInstaller(string[] a)
     {
+        AppPaths.Init();
+        UiText.LoadInstalled();
         if (a.Length == 0 || Environment.ProcessPath is not { } self) return 2;
         var installed = a[0];
         var args = a[1..];
@@ -221,7 +242,7 @@ internal sealed class Updater : IDisposable
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            NativeConsole.Notify($"Das Update konnte nicht installiert werden:\n\n{ex.Message}\n\nCube Radar startet in der bisherigen Version.");
+            NativeConsole.Notify(UiText.T("updater.installFailed", ex.Message));
             return Launch(installed, args) ? 1 : 2;
         }
         return Launch(installed, [.. args, AfterUpdateFlag]) ? 0 : 2;
@@ -238,7 +259,7 @@ internal sealed class Updater : IDisposable
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
         {
-            NativeConsole.Notify($"Cube Radar ließ sich nicht starten:\n\n{ex.Message}\n\nBitte „{Path.GetFileName(exe)}“ von Hand starten.");
+            NativeConsole.Notify(UiText.T("updater.launchFailed", ex.Message, Path.GetFileName(exe)));
             return false;
         }
     }
@@ -256,9 +277,11 @@ internal sealed class Updater : IDisposable
         }
     }
 
-    private void SetState(string state)
+    private void Set(Phase phase, string arg = "", string reasonKey = "")
     {
-        State = state;
+        _phase = phase;
+        _arg = arg;
+        _reasonKey = reasonKey;
         Changed?.Invoke();
     }
 

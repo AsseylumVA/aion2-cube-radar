@@ -27,8 +27,8 @@ public class UpdateTests
     [Fact]
     public void Default_update_links_point_to_this_repository()
     {
-        Assert.Equal("https://api.github.com/repos/dr89mh/aion2-cube-radar/releases/latest", UpdateClient.GitHubLatest.AbsoluteUri);
-        Assert.Equal("https://github.com/dr89mh/aion2-cube-radar/releases", UpdateClient.ReleasesPage);
+        Assert.Equal("https://api.github.com/repos/AsseylumVA/aion2-cube-radar/releases/latest", UpdateClient.GitHubLatest.AbsoluteUri);
+        Assert.Equal("https://github.com/AsseylumVA/aion2-cube-radar/releases", UpdateClient.ReleasesPage);
     }
 
     [Fact]

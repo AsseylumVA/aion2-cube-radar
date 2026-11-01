@@ -14,6 +14,8 @@ internal sealed class RadarSettings
     private string _path = "";
 
     public string? North { get; set; }
+    /// <summary>Interface language: <c>ru</c> or <c>en</c>. Missing in older settings files means Russian.</summary>
+    public string Language { get; set; } = UiText.Russian;
     /// <summary>Auto uses self identity; manual selection works when starting mid-session.</summary>
     public string OwnFaction { get; set; } = "Auto";
     public bool ShowEnemies { get; set; } = true;

@@ -568,9 +568,9 @@ public sealed partial class RadarEngine
             var last = _lastKind.GetValueOrDefault(rule.Kind);
             var since = last == 0 ? now - _startMs : now - last;
             if (since > rule.WithinSeconds * 1000L)
-                warnings.Add($"{rule.Kind} ({OpcodeBook.Hex(_cfg.OpcodeOf(rule.Kind))}) seit {since / 1000} s nicht gesehen: {rule.Hint}");
+                warnings.Add($"missing|{rule.Kind}|{OpcodeBook.Hex(_cfg.OpcodeOf(rule.Kind))}|{since / 1000}|{rule.Hint}");
         }
-        if (SelfId is null && now - _startMs > 30_000) warnings.Add("eigene Entity-ID noch unbekannt (kein 33 36 / keine eigenen Buffs)");
+        if (SelfId is null && now - _startMs > 30_000) warnings.Add("self-id");
         return warnings;
     }
 

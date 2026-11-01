@@ -44,7 +44,7 @@ internal sealed class OverlayWindow : Form
     private long _cursorShownSince = -1;
     private bool _cursorByAlt;
     private NotifyIcon? _tray;
-    private ToolStripMenuItem? _updateItem;
+    private ToolStripMenuItem? _updateItem, _settingsItem, _toggleItem, _zoomItem, _webItem, _capturesItem, _quitItem;
 
     public OverlayWindow(Func<RadarSnapshot> snapshot, RadarSettings settings, OverlayActions actions)
     {
@@ -63,6 +63,7 @@ internal sealed class OverlayWindow : Form
         Location = settings.OverlayX is not null && OnSomeScreen(p) ? p : DefaultLocation();
         _timer.Tick += (_, _) => Tick();
         _timer.Start();
+        UiText.Changed += () => Ui(ApplyChrome);
     }
 
     /// <summary>Runs the overlay on its own UI thread; returns once the window exists.</summary>
@@ -245,13 +246,20 @@ internal sealed class OverlayWindow : Form
         _updateItem = new ToolStripMenuItem { Visible = false, Font = new Font(menu.Font, FontStyle.Bold) };
         _updateItem.Click += (_, _) => ConfirmUpdate();
         menu.Items.Add(_updateItem);
-        menu.Items.Add("Einstellungen … (Strg+Umschalt+F11)", null, (_, _) => OpenSettings());
-        menu.Items.Add("Overlay ein/aus (Strg+Umschalt+F10)", null, (_, _) => ToggleVisible());
-        menu.Items.Add("Zoom wechseln (Strg+Umschalt+F12)", null, (_, _) => CycleRange());
-        menu.Items.Add("Web-Ansicht öffnen", null, (_, _) => _actions.OpenWeb());
-        menu.Items.Add("Aufnahmen-Ordner öffnen", null, (_, _) => _actions.OpenCaptures());
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Beenden", null, (_, _) => _actions.Quit());
+        _settingsItem = new ToolStripMenuItem();
+        _settingsItem.Click += (_, _) => OpenSettings();
+        _toggleItem = new ToolStripMenuItem();
+        _toggleItem.Click += (_, _) => ToggleVisible();
+        _zoomItem = new ToolStripMenuItem();
+        _zoomItem.Click += (_, _) => CycleRange();
+        _webItem = new ToolStripMenuItem();
+        _webItem.Click += (_, _) => _actions.OpenWeb();
+        _capturesItem = new ToolStripMenuItem();
+        _capturesItem.Click += (_, _) => _actions.OpenCaptures();
+        _quitItem = new ToolStripMenuItem();
+        _quitItem.Click += (_, _) => _actions.Quit();
+        menu.Items.AddRange([_settingsItem, _toggleItem, _zoomItem, _webItem, _capturesItem, new ToolStripSeparator(), _quitItem]);
+        ApplyChrome();
         _tray = new NotifyIcon
         {
             Icon = AppIcon(),
@@ -264,14 +272,32 @@ internal sealed class OverlayWindow : Form
         if (_actions.Updater is { } updater) updater.Found += OnUpdateFound;
     });
 
+    /// <summary>Tray captions and the painted overlay follow the active language.</summary>
+    private void ApplyChrome()
+    {
+        if (_settingsItem is null) return;
+        _settingsItem.Text = UiText.T("tray.settings");
+        _toggleItem!.Text = UiText.T("tray.toggle");
+        _zoomItem!.Text = UiText.T("tray.zoom");
+        _webItem!.Text = UiText.T("tray.web");
+        _capturesItem!.Text = UiText.T("tray.captures");
+        _quitItem!.Text = UiText.T("tray.quit");
+        if (_actions.Updater?.Available is { } release && _updateItem is { Visible: true })
+        {
+            var version = release.Version.ToString(3);
+            _updateItem.Text = release.Installable ? UiText.T("tray.updateInstall", version) : UiText.T("tray.updateDownload", version);
+        }
+        Invalidate();
+    }
+
     /// <summary>A newer version exists: tray entry plus a one-time notification (it never takes the focus).</summary>
     private void OnUpdateFound(ReleaseInfo release) => Ui(() =>
     {
         if (_tray is null || _updateItem is null) return;
         var version = release.Version.ToString(3);
-        _updateItem.Text = release.Installable ? $"Update auf {version} installieren …" : $"Version {version} herunterladen …";
+        _updateItem.Text = release.Installable ? UiText.T("tray.updateInstall", version) : UiText.T("tray.updateDownload", version);
         _updateItem.Visible = true;
-        _tray.ShowBalloonTip(10_000, "Cube Radar", $"Version {version} ist verfügbar. Zum Aktualisieren hier klicken.", ToolTipIcon.Info);
+        _tray.ShowBalloonTip(10_000, "Cube Radar", UiText.T("tray.balloon", version), ToolTipIcon.Info);
     });
 
     /// <summary>Asks before installing the available update; without a verifiable exe it offers the release page.</summary>
@@ -281,23 +307,19 @@ internal sealed class OverlayWindow : Form
         var version = release.Version.ToString(3);
         // The settings window is topmost: an unowned message box could open hidden behind it.
         var owner = SettingsOpen ? _settingsForm : null;
-        DialogResult Ask(string text, MessageBoxIcon icon) => MessageBox.Show(owner, text, "Cube Radar – Update", MessageBoxButtons.YesNo, icon);
+        DialogResult Ask(string text, MessageBoxIcon icon) => MessageBox.Show(owner, text, UiText.T("update.title"), MessageBoxButtons.YesNo, icon);
 
         if (!release.Installable)
         {
-            if (Ask($"Cube Radar {version} ist verfügbar, kann sich aber nicht selbst installieren.\n\nRelease-Seite öffnen?",
-                    MessageBoxIcon.Information) == DialogResult.Yes)
+            if (Ask(UiText.T("update.notInstallable", version), MessageBoxIcon.Information) == DialogResult.Yes)
                 updater.OpenPage();
             return;
         }
-        if (Ask($"Cube Radar {version} ist verfügbar (installiert: {Updater.Current.ToString(3)}).\n\n" +
-                "Jetzt herunterladen und installieren? Das Radar startet danach neu, Einstellungen und Daten bleiben erhalten.",
-                MessageBoxIcon.Question) != DialogResult.Yes)
+        if (Ask(UiText.T("update.ask", version, Updater.Current.ToString(3)), MessageBoxIcon.Question) != DialogResult.Yes)
             return;
-        _tray?.ShowBalloonTip(5_000, "Cube Radar", $"Version {version} wird heruntergeladen …", ToolTipIcon.Info);
+        _tray?.ShowBalloonTip(5_000, "Cube Radar", UiText.T("tray.downloading", version), ToolTipIcon.Info);
         if (await updater.InstallAsync() is { } error
-            && Ask($"Das Update hat nicht geklappt:\n\n{error}\n\nRelease-Seite öffnen, um es von Hand herunterzuladen?",
-                MessageBoxIcon.Warning) == DialogResult.Yes)
+            && Ask(UiText.T("update.failedAsk", error), MessageBoxIcon.Warning) == DialogResult.Yes)
             updater.OpenPage();
     });
 
@@ -513,9 +535,9 @@ internal static class OverlayRenderer
         {
             var (posText, posColor) = me switch
             {
-                { Ring: > 0 } m => ($"± {m.Ring / 100:0} m", Palette.OutOfView),
-                { } m => ($"Pos. {m.AgeMs / 1000} s", m.AgeMs <= s.FixFreshSeconds * 1000 ? Palette.Visible : m.AgeMs <= 30_000 ? Palette.OutOfView : Palette.Warn),
-                null => ("Pos. ?", Palette.Warn),
+                { Ring: > 0 } m => (UiText.T("overlay.posRing", Math.Round(m.Ring / 100)), Palette.OutOfView),
+                { } m => (UiText.T("overlay.posAge", m.AgeMs / 1000), m.AgeMs <= s.FixFreshSeconds * 1000 ? Palette.Visible : m.AgeMs <= 30_000 ? Palette.OutOfView : Palette.Warn),
+                null => (UiText.T("overlay.posUnknown"), Palette.Warn),
             };
             var tw = g.MeasureString(posText, small).Width;
             var px = Side / 2 - tw / 2 + 5;
@@ -538,7 +560,7 @@ internal static class OverlayRenderer
             g.DrawLine(ring, cx, cy - r, cx, cy + r);
         }
         Text(g, $"{rangeM / 2} m", tiny, Palette.Muted, cx + 3, cy - r / 2 - 12);
-        Text(g, "N", small, Palette.Text, cx - 4, cy - r - 13);
+        Text(g, UiText.T("overlay.north"), small, Palette.Text, cx - 4, cy - r - 13);
         if (SendRadiusM < rangeM)
         {
             using var send = new Pen(Color.FromArgb(110, Palette.Me), 1) { DashStyle = DashStyle.Dash };
@@ -549,8 +571,8 @@ internal static class OverlayRenderer
         if (s is null || me is null)
         {
             if (showEnemies) EnemyList(g, s, small, tiny);
-            Text(g, s is null ? "wartet auf Daten …" : "eigene Position unbekannt", label, Palette.Muted, cx, cy + r / 2, center: true);
-            if (s is not null) Text(g, "(Buff wirken hilft)", tiny, Palette.Muted, cx, cy + r / 2 + 16, center: true);
+            Text(g, s is null ? UiText.T("overlay.waiting") : UiText.T("overlay.noPosition"), label, Palette.Muted, cx, cy + r / 2, center: true);
+            if (s is not null) Text(g, UiText.T("overlay.buffHint"), tiny, Palette.Muted, cx, cy + r / 2 + 16, center: true);
             return;
         }
 
@@ -682,15 +704,15 @@ internal static class OverlayRenderer
         using var line = new Pen(Palette.Line);
         g.DrawLine(line, 5, top, Side - 5, top);
         var enemies = s?.Players.Where(p => p.IsEnemy == true).ToList() ?? [];
-        Text(g, $"GEGNER ({enemies.Count})", title, Palette.Warn, 7, top + 3);
+        Text(g, UiText.T("overlay.enemies", enemies.Count), title, Palette.Warn, 7, top + 3);
         if (s is null || s.OwnFaction == "Unknown")
         {
-            Text(g, "Eigene Fraktion unter ⚙ wählen", detail, Palette.OutOfView, 7, top + 26);
+            Text(g, UiText.T("overlay.pickFaction"), detail, Palette.OutOfView, 7, top + 26);
             return;
         }
         if (enemies.Count == 0)
         {
-            Text(g, "Keine zugeordneten Gegner in Sicht", detail, Palette.Muted, 7, top + 26);
+            Text(g, UiText.T("overlay.noEnemies"), detail, Palette.Muted, 7, top + 26);
             return;
         }
         var state = g.Save();
@@ -698,12 +720,18 @@ internal static class OverlayRenderer
         var y = top + 24;
         foreach (var p in enemies.Take(3))
         {
-            var faction = p.Faction == "Asmodian" ? "Asmodier" : p.Faction;
-            var distance = p.DistanceM is { } d ? $"{(p.PositionStale || p.DistanceEstimated ? "~" : "")}{d:0} m" : "Pos. ?";
+            var faction = p.Faction switch
+            {
+                "Elyos" => UiText.T("faction.elyos"),
+                "Asmodian" => UiText.T("faction.asmodian"),
+                _ => UiText.T("faction.unknown"),
+            };
+            var distance = p.DistanceM is { } d ? $"{(p.PositionStale || p.DistanceEstimated ? "~" : "")}{d:0} m" : UiText.T("overlay.posUnknown");
             Text(g, $"{p.Name} · {faction} · {distance}", detail, Palette.Warn, 7, y);
-            var rank = p.RankName ?? (p.RankCode is { } code ? $"Rang-Code {code}" : "Rang unbekannt");
+            var rank = p.RankName is { } name && !name.StartsWith("PvP-Rang", StringComparison.Ordinal) ? name
+                : p.RankCode is { } code ? UiText.T("rank.code", code) : UiText.T("rank.unknown");
             if (p.RankCode is not null && !p.RankVerified) rank += " *";
-            if (p.PositionStale && p.PositionAgeMs is { } age) rank += $" · Pos. {age / 1000}s alt";
+            if (p.PositionStale && p.PositionAgeMs is { } age) rank += UiText.T("overlay.posOld", age / 1000);
             Text(g, rank, detail, Palette.Muted, 7, y + 12);
             y += 26;
         }

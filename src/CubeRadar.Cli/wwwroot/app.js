@@ -1,15 +1,37 @@
 // Cube Radar web UI: renders the state pushed by `cuberadar radar` over /ws. Coordinates are game units (cm).
 "use strict";
 
+function loadI18n() {
+  if (globalThis.I18N) return globalThis.I18N;
+  try {
+    const xhr = new XMLHttpRequest();
+    xhr.open("GET", "i18n.json", false);
+    xhr.send();
+    if (xhr.responseText) return JSON.parse(xhr.responseText);
+  } catch { /* the page is served over HTTP; tests inject I18N instead */ }
+  return { ru: {}, en: {} };
+}
+const I18N = loadI18n();
+let lang = localStorage.getItem("lang") || "ru";
+if (!I18N[lang]) lang = "ru";
+
+function t(key, ...args) {
+  const pack = I18N[lang] || {};
+  const fallback = I18N.en || {};
+  let s = pack[key] ?? fallback[key] ?? key;
+  args.forEach((a, i) => { s = s.split("{" + i + "}").join(String(a)); });
+  return s;
+}
+
 const SEND_RADIUS = 10000; // measured send radius for cubes (docs/FINDINGS.md B8), planar units
 const LEVEL_M = 3;         // |height difference| up to this counts as "same height"
 const STRIP = 64;          // width of the height strip on the right of the radar (px)
-const STATUS_TEXT = {
-  Visible: "sichtbar",
-  OutOfView: "außer Sicht – steht vermutlich noch",
-  Opening: "wird geöffnet",
-  Opened: "geöffnet",
-  Gone: "weg",
+const STATUS_KEY = {
+  Visible: "status.visible",
+  OutOfView: "status.out",
+  Opening: "status.opening",
+  Opened: "status.opened",
+  Gone: "status.gone",
 };
 const COLORS = {};
 for (const k of ["visible", "out", "opening", "gone", "me", "spot", "hist", "text", "muted", "line", "enemy"])
@@ -44,6 +66,11 @@ function connect() {
 }
 
 function onState() {
+  if (msg.lang && I18N[msg.lang] && msg.lang !== lang) {
+    lang = msg.lang;
+    localStorage.setItem("lang", lang);
+    applyStatic();
+  }
   const r = msg.radar;
   const fresh = [];
   for (const c of r.cubes) {
@@ -89,7 +116,7 @@ function me() {
   const fix = r.self, ring = r.ring;
   // The ring estimate has no height: the last real fix's z stands in (its age is shown).
   const z = fix ? fix.z : null, zAge = fix ? fix.ageMs : null;
-  if (ring && (!fix || ring.timeMs > fix.timeMs)) return { x: ring.x, y: ring.y, z, zAge, age: ring.ageMs, ring: ring.uncertainty, src: "Schätzung" };
+  if (ring && (!fix || ring.timeMs > fix.timeMs)) return { x: ring.x, y: ring.y, z, zAge, age: ring.ageMs, ring: ring.uncertainty, src: t("web.estimate") };
   if (fix) return { x: fix.x, y: fix.y, z, zAge, age: fix.ageMs, ring: 0, src: fix.source };
   return null;
 }
@@ -100,12 +127,12 @@ function dzOf(c, m) {
 }
 
 function heightInfo(dz) {
-  if (dz == null) return { cls: "unknown", text: "Höhe unbekannt", short: "" };
+  if (dz == null) return { cls: "unknown", text: t("height.unknown"), short: "" };
   const a = Math.abs(Math.round(dz));
-  if (Math.abs(dz) <= LEVEL_M) return { cls: "level", text: "≈ gleiche Höhe", short: "≈" };
+  if (Math.abs(dz) <= LEVEL_M) return { cls: "level", text: t("height.same"), short: "≈" };
   return dz > 0
-    ? { cls: "up", text: `▲ ${a} m über dir`, short: `▲${a}` }
-    : { cls: "down", text: `▼ ${a} m unter dir`, short: `▼${a}` };
+    ? { cls: "up", text: t("height.above", a), short: `▲${a}` }
+    : { cls: "down", text: t("height.below", a), short: `▼${a}` };
 }
 
 function rel(p, from) {
@@ -117,24 +144,27 @@ function rel(p, from) {
   return { n, e, dist: Math.hypot(dx, dy), bearing };
 }
 
-const COMPASS = ["N", "NO", "O", "SO", "S", "SW", "W", "NW"];
-const compass = (b) => COMPASS[Math.round(b / 45) % 8];
+const COMPASS_KEYS = ["compass.n", "compass.ne", "compass.e", "compass.se", "compass.s", "compass.sw", "compass.w", "compass.nw"];
+const WIRE_COMPASS = { N: "compass.n", NO: "compass.ne", O: "compass.e", SO: "compass.se", S: "compass.s", SW: "compass.sw", W: "compass.w", NW: "compass.nw" };
+const compass = (b) => t(COMPASS_KEYS[Math.round(b / 45) % 8]);
+const compassWire = (code) => (code && WIRE_COMPASS[code] ? t(WIRE_COMPASS[code]) : (code || ""));
 
 function fmtAge(ms) {
   if (ms == null || ms < 0) return "–";
   const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s} s`;
+  if (s < 60) return t("age.s", s);
   const m = Math.floor(s / 60);
-  if (m < 60) return `${m}:${String(s % 60).padStart(2, "0")} min`;
-  return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")} h`;
+  if (m < 60) return t("age.m", `${m}:${String(s % 60).padStart(2, "0")}`);
+  return t("age.h", `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`);
 }
-const fmtNum = (v) => Math.round(v).toLocaleString("de-DE");
+const fmtNum = (v) => Math.round(v).toLocaleString(lang === "ru" ? "ru-RU" : "en-US");
 const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-const factionName = (v) => ({ Elyos: "Elyos", Asmodian: "Asmodier" })[v] || "unbekannt";
+const factionName = (v) => ({ Elyos: t("faction.elyos"), Asmodian: t("faction.asmodian") })[v] || t("faction.unknown");
 const enemies = () => ui.enemies ? (msg.radar.players || []).filter((p) => p.isEnemy === true) : [];
 
 function rankText(p) {
-  const text = p.rankName || (p.rankCode != null ? `Rang-Code ${p.rankCode}` : "Rang unbekannt");
+  const text = p.rankName && !String(p.rankName).startsWith("PvP-Rang") ? p.rankName
+    : (p.rankCode != null ? t("rank.code", p.rankCode) : t("rank.unknown"));
   return text + (p.rankCode != null && !p.rankVerified ? " *" : "");
 }
 
@@ -166,14 +196,14 @@ function renderEnemies() {
   document.getElementById("enemy-count").textContent = `(${list.length})`;
   const empty = document.getElementById("enemy-empty");
   empty.hidden = list.length > 0;
-  empty.textContent = !ui.enemies ? "Gegneranzeige ausgeschaltet."
-    : r.ownFaction === "Unknown" ? "Eigene Fraktion noch unbekannt – oben bei ‘Ich spiele’ wählen."
-    : `Keine zugeordneten Gegner in Sicht.${unknown ? ` ${unknown} Spieler mit unbekannter Fraktion.` : ""}`;
+  empty.textContent = !ui.enemies ? t("web.enemyOff")
+    : r.ownFaction === "Unknown" ? t("web.factionPick")
+    : t("web.noEnemies", unknown ? t("web.unknownPlayers", unknown) : "");
   document.getElementById("enemy-list").innerHTML = list.map((p) => {
-    const distance = p.distanceM != null ? `${p.distanceEstimated ? "≈ " : ""}${fmtNum(p.distanceM)} m ${p.compass || ""}` : "Position noch unbekannt";
-    const age = p.positionAgeMs != null ? ` · Position vor ${fmtAge(p.positionAgeMs)}` : "";
+    const distance = p.distanceM != null ? `${p.distanceEstimated ? "≈ " : ""}${fmtNum(p.distanceM)} m ${compassWire(p.compass)}` : t("web.posUnknown");
+    const age = p.positionAgeMs != null ? t("web.posAge", fmtAge(p.positionAgeMs)) : "";
     return `<li class="enemy-card${p.positionStale ? " stale" : ""}"><strong>${esc(p.name)}</strong> · ${esc(factionName(p.faction))}
-      <div>${esc(rankText(p))}</div><div class="enemy-meta">${esc(distance + age)}${p.positionStale ? " · nicht frisch" : ""}</div></li>`;
+      <div>${esc(rankText(p))}</div><div class="enemy-meta">${esc(distance + age)}${p.positionStale ? esc(t("web.stale")) : ""}</div></li>`;
   }).join("");
 }
 
@@ -191,15 +221,15 @@ function renderHeader() {
   const m = me();
   const fresh = r.fixFreshSeconds * 1000;
   const posCls = !m ? "bad" : m.ring ? "mid" : m.age <= fresh ? "ok" : m.age <= 30000 ? "mid" : "bad";
-  const posVal = !m ? "unbekannt" : `${m.ring ? "± " + Math.round(m.ring / 100) + " m, " : ""}vor ${fmtAge(m.age)}`;
+  const posVal = !m ? t("web.unknown") : `${m.ring ? "± " + Math.round(m.ring / 100) + " m, " : ""}${t("web.before", fmtAge(m.age))}`;
   document.getElementById("chips").innerHTML = [
-    chip(capCls, c.mode === "replay" ? "Replay" : "Capture",
-      c.mode === "replay" ? (c.status || "läuft") : c.streams > 0 ? (idle < 5000 ? "läuft" : `keine Daten seit ${fmtAge(idle)}`) : (c.status || "wartet"),
-      `${c.status || ""} ${c.device || ""} · ${c.packets} Pakete${c.npcapDropped ? ` · ${c.npcapDropped} verworfen` : ""}`),
-    chip(r.zone ? "ok" : "mid", "Zone", r.zone || "?", r.mapId ? `Map-ID ${r.mapId}` : "Map-ID unbekannt (kommt beim Zonenwechsel)"),
-    chip(r.selfId ? "ok" : "bad", "Ich", r.selfId ?? "?", "eigene Entity-ID"),
-    chip(r.ownFaction && r.ownFaction !== "Unknown" ? "ok" : "mid", "Fraktion", factionName(r.ownFaction)),
-    chip(posCls, "Position", posVal, m ? `Quelle: ${m.src}` : "noch keine Positionsmeldung (Buff wirken hilft)"),
+    chip(capCls, c.mode === "replay" ? t("web.replay") : t("web.capture"),
+      c.mode === "replay" ? (c.status || t("web.running")) : c.streams > 0 ? (idle < 5000 ? t("web.running") : t("web.idle", fmtAge(idle))) : (c.status || t("web.waiting")),
+      `${c.status || ""} ${c.device || ""} · ${t("web.packets", c.packets, c.npcapDropped ? t("web.dropped", c.npcapDropped) : "")}`),
+    chip(r.zone ? "ok" : "mid", t("web.zone"), r.zone || "?", r.mapId ? t("web.mapId", r.mapId) : t("web.mapUnknown")),
+    chip(r.selfId ? "ok" : "bad", t("web.me"), r.selfId ?? "?", t("web.selfId")),
+    chip(r.ownFaction && r.ownFaction !== "Unknown" ? "ok" : "mid", t("web.faction"), factionName(r.ownFaction)),
+    chip(posCls, t("web.position"), posVal, m ? t("web.source", m.src) : t("web.noFix")),
   ].join("");
   const w = document.getElementById("warnings");
   w.hidden = r.warnings.length === 0;
@@ -208,7 +238,7 @@ function renderHeader() {
 
 function arrowSvg(bearing, color) {
   return `<svg class="arrow" viewBox="-22 -22 44 44"><circle r="20" fill="none" stroke="${COLORS.line}"/>
-    <text y="-12" text-anchor="middle" font-size="7" fill="${COLORS.muted}">N</text>
+    <text y="-12" text-anchor="middle" font-size="7" fill="${COLORS.muted}">${t("overlay.north")}</text>
     <g transform="rotate(${bearing})"><path d="M0 -15 L7 6 L0 2 L-7 6 Z" fill="${color}"/></g></svg>`;
 }
 
@@ -221,23 +251,24 @@ function renderList(fresh) {
   });
   const order = { Visible: 0, Opening: 1, OutOfView: 2, Opened: 3, Gone: 4 };
   rows.sort((a, b) => order[a.c.status] - order[b.c.status] || (a.rp?.dist ?? 1e12) - (b.rp?.dist ?? 1e12));
-  document.getElementById("count").textContent = r.cubes.length ? `(${r.cubes.filter((c) => c.status === "Visible").length} sichtbar)` : "";
+  document.getElementById("count").textContent = r.cubes.length ? t("web.visibleCount", r.cubes.filter((c) => c.status === "Visible").length) : "";
   document.getElementById("empty").hidden = r.cubes.length > 0;
   document.getElementById("list").innerHTML = rows.map(({ c, rp }) => {
     const color = { Visible: COLORS.visible, OutOfView: COLORS.out, Opening: COLORS.opening }[c.status] || COLORS.gone;
     const hi = heightInfo(dzOf(c, m));
-    const status = STATUS_TEXT[c.status] + (c.openedBy ? (c.openedBySelf ? " (von dir)" : ` (von Spieler ${c.openedBy})`) : "");
-    const dist = rp ? `${fmtNum(rp.dist / 100)} m<small>${compass(rp.bearing)} ${Math.round(rp.bearing)}°</small>` : `? m<small>eigene Position unbekannt</small>`;
-    const heightAge = m && m.zAge > msg.radar.fixFreshSeconds * 1000 ? ` <span class="age">(deine Höhe von vor ${fmtAge(m.zAge)})</span>` : "";
-    const created = c.createdMs ? ` · existiert seit ${fmtAge(r.nowMs - c.createdMs)}` : "";
+    const status = t(STATUS_KEY[c.status] || "status.gone") + (c.openedBy ? (c.openedBySelf ? t("status.byYou") : t("status.byPlayer", c.openedBy)) : "");
+    const dist = rp ? `${fmtNum(rp.dist / 100)} m<small>${compass(rp.bearing)} ${Math.round(rp.bearing)}°</small>` : `? m<small>${t("web.ownPosUnknown")}</small>`;
+    const heightAge = m && m.zAge > msg.radar.fixFreshSeconds * 1000 ? ` <span class="age">${t("height.age", fmtAge(m.zAge))}</span>` : "";
+    const created = c.createdMs ? t("web.exists", fmtAge(r.nowMs - c.createdMs)) : "";
+    const since = c.status !== "Visible" ? t("web.since", fmtAge(r.nowMs - c.statusSinceMs)) : "";
     return `<li class="cube ${c.status}${freshKeys.has(`${c.objectId}@${c.firstSeenMs}`) ? " new" : ""}">
       <div class="dist">${dist}</div>
       ${rp ? arrowSvg(rp.bearing, color) : "<span></span>"}
       <div class="height ${hi.cls}">${hi.text}${heightAge}</div>
-      <div class="status">${status}${c.learned ? ` · Template gelernt (${c.learned})` : ""}</div>
-      <div class="meta">${c.zone || "?"} · Template ${c.template} · #${c.objectId} · gesehen vor ${fmtAge(r.nowMs - c.firstSeenMs)}${created}${c.status !== "Visible" ? ` · Status seit ${fmtAge(r.nowMs - c.statusSinceMs)}` : ""}</div>
+      <div class="status">${status}${c.learned ? t("web.learned", esc(c.learned)) : ""}</div>
+      <div class="meta">${c.zone || "?"} · ${t("web.template")} ${c.template} · #${c.objectId} · ${t("web.seen", fmtAge(r.nowMs - c.firstSeenMs))}${created}${since}</div>
       <div class="coords">x ${fmtNum(c.x)} · y ${fmtNum(c.y)} · z ${fmtNum(c.z)}
-        <button data-copy="${Math.round(c.x)} ${Math.round(c.y)} ${Math.round(c.z)}">kopieren</button></div>
+        <button data-copy="${Math.round(c.x)} ${Math.round(c.y)} ${Math.round(c.z)}">${t("web.copy")}</button></div>
     </li>`;
   }).join("");
 }
@@ -276,7 +307,7 @@ function draw() {
   } else {
     const pts = [...r.cubes, ...positionedEnemies, ...r.trail.filter((p) => p.length === 2).map((p) => ({ x: p[0], y: p[1] })), ...(m ? [m] : [])];
     const fit = pts.length ? pts : zoneSpots;
-    if (!fit.length) return drawText(w / 2, h / 2, "Noch keine Daten", COLORS.muted, "center");
+    if (!fit.length) return drawText(w / 2, h / 2, t("web.noData"), COLORS.muted, "center");
     const ns = fit.map((p) => p.x * o.nx + p.y * o.ny), es = fit.map((p) => p.x * o.ex + p.y * o.ey);
     const pad = 4000;
     const nMin = Math.min(...ns) - pad, nMax = Math.max(...ns) + pad, eMin = Math.min(...es) - pad, eMax = Math.max(...es) + pad;
@@ -333,11 +364,11 @@ function draw() {
     ctx.globalAlpha = stale ? 0.5 : 1;
     dot([x, y], 6, COLORS.me);
     ctx.globalAlpha = 1;
-    drawText(x - 10, y + 16, stale || m.ring ? `du, vor ${fmtAge(m.age)}` : "du", COLORS.me, "right");
+    drawText(x - 10, y + 16, stale || m.ring ? t("web.youAgo", fmtAge(m.age)) : t("web.you"), COLORS.me, "right");
   }
 
   // cubes
-  const t = Date.now();
+  const now = Date.now();
   for (const c of r.cubes) {
     let [x, y] = toScreen(c);
     const color = { Visible: COLORS.visible, OutOfView: COLORS.out, Opening: COLORS.opening }[c.status] || COLORS.gone;
@@ -358,7 +389,7 @@ function draw() {
       ctx.fill();
       ctx.restore();
     } else if (c.status === "Visible" || c.status === "Opening" || c.status === "OutOfView") {
-      const pulse = c.status === "Opening" ? 3 + 2 * Math.sin(t / 150) : 0;
+      const pulse = c.status === "Opening" ? 3 + 2 * Math.sin(now / 150) : 0;
       const filled = c.status !== "OutOfView";
       ctx.shadowColor = color;
       ctx.shadowBlur = filled ? 12 : 0;
@@ -415,7 +446,7 @@ function drawHeightStrip(full, h, r, m) {
   ctx.fillRect(x0, 0, STRIP, h);
   ctx.strokeStyle = COLORS.line;
   line(x0, 0, x0, h);
-  drawText(x0 + STRIP / 2, 20, "Höhe", COLORS.muted, "center");
+  drawText(x0 + STRIP / 2, 20, t("web.height"), COLORS.muted, "center");
   const live = r.cubes.filter((c) => c.status === "Visible" || c.status === "Opening" || c.status === "OutOfView");
   if (!m || m.z == null) {
     drawText(x0 + STRIP / 2, mid, "?", COLORS.muted, "center");
@@ -432,7 +463,7 @@ function drawHeightStrip(full, h, r, m) {
   }
   ctx.strokeStyle = COLORS.me;
   line(x0 + 4, mid, full - 4, mid);
-  drawText(full - 4, mid - 4, "du", COLORS.me, "right");
+  drawText(full - 4, mid - 4, t("web.you"), COLORS.me, "right");
   live.forEach((c, i) => {
     const dz = dzs[i];
     const y = mid - Math.max(-range, Math.min(range, dz)) * px;
@@ -493,7 +524,7 @@ function announce(cubes) {
     return rp ? `${fmtNum(rp.dist / 100)} m ${compass(rp.bearing)}` : `${c.zone || ""} x ${fmtNum(c.x)} y ${fmtNum(c.y)}`;
   }).join(", ");
   if (ui.sound && audio) chime();
-  if (ui.notify) new Notification(cubes.length > 1 ? `${cubes.length} Hidden Cubes` : "Hidden Cube", { body: text, tag: "cube" });
+  if (ui.notify) new Notification(cubes.length > 1 ? t("web.cubeMany", cubes.length) : t("web.cubeOne"), { body: text, tag: "cube" });
   document.title = `● Cube: ${text}`;
   setTimeout(() => (document.title = "Cube Radar"), 15000);
 }
@@ -519,13 +550,13 @@ function syncControls() {
   document.getElementById("range").value = String(ui.range);
   document.getElementById("range").disabled = ui.mode !== "radar";
   const s = document.getElementById("sound");
-  s.textContent = ui.sound ? "Ton an" : "Ton aus";
+  s.textContent = ui.sound ? t("web.soundOn") : t("web.soundOff");
   s.classList.toggle("on", ui.sound);
   const n = document.getElementById("notify");
-  n.textContent = ui.notify ? "Hinweise an" : "Hinweise aus";
+  n.textContent = ui.notify ? t("web.notifyOn") : t("web.notifyOff");
   n.classList.toggle("on", ui.notify);
   const e = document.getElementById("enemies");
-  e.textContent = ui.enemies ? "Gegner an" : "Gegner aus";
+  e.textContent = ui.enemies ? t("web.enemiesOn") : t("web.enemiesOff");
   e.classList.toggle("on", ui.enemies);
 }
 
@@ -547,7 +578,7 @@ document.getElementById("north").addEventListener("change", async (e) => {
 localStorage.removeItem("north"); // older versions kept it per browser
 document.getElementById("faction").addEventListener("change", async (e) => {
   const result = await fetch("/api/faction", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ faction: e.target.value }) });
-  if (!result.ok) console.error("Fraktionswechsel fehlgeschlagen", await result.text());
+  if (!result.ok) console.error(t("web.factionFailed"), await result.text());
   e.target.blur();
 });
 document.getElementById("enemies").addEventListener("click", () => {
@@ -572,5 +603,31 @@ document.getElementById("notify").addEventListener("click", async () => {
 window.addEventListener("resize", draw);
 setInterval(() => msg && (renderHeader(), draw()), 1000);
 
-syncControls();
+function applyStatic() {
+  document.documentElement.lang = lang;
+  document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
+  const north = document.getElementById("north-label");
+  if (north) north.title = t("web.northTitle");
+  const langSel = document.getElementById("lang");
+  if (langSel && document.activeElement !== langSel) langSel.value = lang;
+  syncControls();
+}
+
+document.getElementById("lang").addEventListener("change", async (e) => {
+  lang = e.target.value;
+  if (!I18N[lang]) lang = "ru";
+  localStorage.setItem("lang", lang);
+  applyStatic();
+  if (msg) onState();
+  try {
+    await fetch("/api/lang", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lang }),
+    });
+  } catch { /* the radar is not serving this page, or this is the test harness */ }
+  e.target.blur();
+});
+
+applyStatic();
 connect();

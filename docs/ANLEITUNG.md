@@ -17,7 +17,7 @@ GitHub, und die lässt sich abschalten (siehe [Updates](#8-updates)).
 
 ## 2. Starten und beenden
 
-1. Unter [Releases](https://github.com/dr89mh/aion2-cube-radar/releases/latest) `Cube.Radar.exe`
+1. Unter [Releases](https://github.com/AsseylumVA/aion2-cube-radar/releases/latest) `Cube.Radar.exe`
    herunterladen und irgendwohin legen, z. B. auf den Desktop. Eine Installation ist nicht nötig.
 2. Doppelklick auf die exe. Meldet Windows SmartScreen eine unbekannte App: „Weitere Informationen“ →
    „Trotzdem ausführen“. Danach fragt Windows, ob Cube Radar Änderungen vornehmen darf: „Ja“ (Admin-Rechte, damit
@@ -149,7 +149,7 @@ wird.
 ## 8. Updates
 
 Das Radar sucht beim Start und danach alle 6 Stunden bei GitHub nach einer neuen Version.
-Ab 0.9.0 prüft es `dr89mh/aion2-cube-radar`. Frühere Builds können noch auf das ursprüngliche Repository zeigen:
+Ab 0.9.3 prüft es `AsseylumVA/aion2-cube-radar`. Frühere Builds können noch auf das ursprüngliche Repository zeigen:
 in diesem Fall 0.9.0 einmal manuell herunterladen und bei beendetem Radar ersetzen. Einstellungen bleiben erhalten.
 
 - Gibt es eine, erscheint unten rechts ein Hinweis, und im Menü des Radar-Symbols steht „Update auf … installieren“.
@@ -162,7 +162,7 @@ in diesem Fall 0.9.0 einmal manuell herunterladen und bei beendetem Radar ersetz
 - **Abschalten:** Einstellungen → „Automatisch nach Updates suchen“. Dann verbindet sich das Radar gar nicht mehr mit
   dem Internet; „Jetzt prüfen“ fragt nur, wenn du es anklickst.
 - Liegt die exe in einem Ordner ohne Schreibrecht (z. B. unter „Programme“), kann sie sich nicht selbst ersetzen. Dann
-  die neue Version von der [Release-Seite](https://github.com/dr89mh/aion2-cube-radar/releases/latest)
+  die neue Version von der [Release-Seite](https://github.com/AsseylumVA/aion2-cube-radar/releases/latest)
   herunterladen.
 
 ## 9. Probleme lösen
