@@ -41,7 +41,7 @@ public sealed class RadarConfig
         [1200039] = new CubeTemplate(1200039, "Verteron", "verified"),
         [1200041] = new CubeTemplate(1200041, "Verteron", "verified"),
     };
-    public Dictionary<int, string> MapZones { get; init; } = new() { [1010] = "Verteron" };
+    public Dictionary<int, string> MapZones { get; init; } = new() { [1010] = "Verteron", [1110] = "Altgard" };
     public uint OpenDoneItem { get; init; } = 0x259AC523;
     public string North { get; init; } = "-y";
     public double FixFreshSeconds { get; init; } = 5;

@@ -88,7 +88,6 @@ function onState() {
   firstUpdate = false;
   if (fresh.length) announce(fresh);
   if (r.zone && r.zone !== spotsZone) loadZone(r.zone);
-  if (r.mapId != null) localStorage.setItem("mapId", String(r.mapId));
   const sel = document.getElementById("north");
   if (document.activeElement !== sel) sel.value = r.orientation.north;
   const base = document.getElementById("basemap");
@@ -202,19 +201,14 @@ function frameAround(points, w, h) {
   return { scale, center: { x: cn * o.nx + ce * o.ex, y: cn * o.ny + ce * o.ey } };
 }
 
-function rememberedMapId() {
-  const n = Number(localStorage.getItem("mapId"));
-  return Number.isInteger(n) ? n : null;
-}
-
 function currentMap() {
   if (!ZONE_MAPS.length || !msg) return null;
   const r = msg.radar;
-  // The zone packet arrives once, on entry. Keep the last id so a radar started mid-zone still picks the picture.
-  const id = r.mapId != null ? r.mapId : rememberedMapId();
-  const raw = ui.basemap && ui.basemap !== "auto"
-    ? ZONE_MAPS.find((m) => m.id === ui.basemap)
-    : ZONE_MAPS.find((m) => (id != null && m.mapIds.includes(id)) || (r.zone && m.zone === r.zone));
+  const picked = ui.basemap && ui.basemap !== "auto" ? ZONE_MAPS.find((m) => m.id === ui.basemap) : null;
+  // The zone packet arrives once, on entry. Until it does, the Background choice is the zone.
+  if (r.mapId == null) return picked ? withShift(picked) : null;
+  if (picked) return withShift(picked);
+  const raw = ZONE_MAPS.find((m) => m.mapIds.includes(r.mapId) || (r.zone && m.zone === r.zone));
   return raw ? withShift(raw) : null;
 }
 

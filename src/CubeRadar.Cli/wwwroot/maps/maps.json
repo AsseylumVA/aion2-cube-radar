@@ -20,7 +20,7 @@
     {
       "id": "altgard",
       "zone": "Altgard",
-      "mapIds": [],
+      "mapIds": [1110],
       "file": "World_D_A",
       "path": "maps/altgard",
       "tilesX": 8,
