@@ -8,8 +8,8 @@ using CubeRadar.Core.Radar;
 namespace CubeRadar.Cli;
 
 /// <summary>
-/// The same zone picture the web radar draws, clipped to the overlay disc. Only the background: live cubes stay the
-/// colored markers drawn by <see cref="OverlayRenderer"/>.
+/// The same zone picture the web radar draws, filling the square reserved for the map. Only the background: live
+/// cubes stay the colored markers drawn by <see cref="OverlayRenderer"/>.
 /// </summary>
 internal static class OverlayMap
 {
@@ -18,21 +18,21 @@ internal static class OverlayMap
     private static ZoneFile[]? _zones;
 
     public static void Draw(Graphics g, RadarSnapshot snapshot, double playerX, double playerY, Func<double, double, PointF> toScreen,
-        float cx, float cy, float radius, IReadOnlyDictionary<string, MapNudge>? nudges)
+        RectangleF area, IReadOnlyDictionary<string, MapNudge>? nudges)
     {
         var zone = Find(snapshot);
         if (zone is null) return;
         var shift = nudges is not null && nudges.TryGetValue(zone.Id, out var nudge) ? nudge : null;
         var offsetX = zone.OffsetX + (shift?.X ?? 0);
         var offsetY = zone.OffsetY + (shift?.Y ?? 0);
-        var reach = radius / Math.Max(1e-6, Distance(toScreen, playerX, playerY));
+        // The square's corner is farther out than its edge, so the tile search uses that diagonal.
+        var reach = Math.Sqrt(area.Width * area.Width + area.Height * area.Height) / 2
+            / Math.Max(1e-6, Distance(toScreen, playerX, playerY));
 
         var saved = g.Save();
         try
         {
-            using var clip = new GraphicsPath();
-            clip.AddEllipse(cx - radius, cy - radius, radius * 2, radius * 2);
-            g.SetClip(clip);
+            g.SetClip(area);
             g.InterpolationMode = InterpolationMode.HighQualityBilinear;
             g.PixelOffsetMode = PixelOffsetMode.Half;
             for (var row = 0; row < zone.TilesY; row++)

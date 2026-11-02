@@ -587,8 +587,9 @@ internal static class OverlayRenderer
             return new PointF(cx + (float)(e * px2world), cy - (float)(n * px2world));
         }
 
-        // Zone picture only. Spawn points stay on the web map; this disc keeps the live cubes.
-        OverlayMap.Draw(g, s, me.X, me.Y, ToScreen, cx, cy, r, nudges);
+        // Zone picture only, the whole square under the header. Spawn points stay on the web map.
+        var mapArea = new RectangleF(1, Header, Side - 2, Side);
+        OverlayMap.Draw(g, s, me.X, me.Y, ToScreen, mapArea, nudges);
         Rings();
 
         // own trail (last ~2 minutes): shows where we came from, i.e. roughly where we are heading
