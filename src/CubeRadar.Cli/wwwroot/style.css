@@ -129,7 +129,7 @@ canvas.align { cursor: crosshair; }
 .enemy-card strong { color: var(--enemy); }
 .enemy-card .enemy-meta, .rank-note { color: var(--muted); font-size: 12px; }
 .rank-note { padding: 0 14px; margin: 0 0 8px; }
-.sw.spot { background: #e4ebf1; border: 2px solid #14181d; border-radius: 1px; }
+.sw.spot { width: 14px; height: 14px; background: url("maps/hidden-cube.webp") center / contain no-repeat; border: none; border-radius: 0; }
 .sw.hist { background: var(--hist); border-radius: 50%; opacity: .7; }
 .tri { font-style: normal; font-size: 11px; margin-right: 4px; color: var(--visible); }
 

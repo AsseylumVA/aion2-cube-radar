@@ -615,18 +615,25 @@ function draw() {
   drawHeightStrip(full, h, r, m);
 }
 
+let spawnIcon = null;
+
 function drawSpawn(x, y, here) {
-  const s = here ? 12 : 6;
-  ctx.beginPath();
-  ctx.rect(x - s, y - s, s * 2, s * 2);
-  ctx.lineWidth = here ? 2.5 : 1.75;
-  ctx.strokeStyle = "#14181d";
-  if (!here) {
-    ctx.fillStyle = "#e4ebf1";
-    ctx.fill();
+  const s = here ? 16 : 12;
+  if (spawnIcon && spawnIcon.complete && spawnIcon.naturalWidth) {
+    ctx.drawImage(spawnIcon, x - s / 2, y - s / 2, s, s);
+    return;
   }
-  ctx.stroke();
-  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.rect(x - 3, y - 3, 6, 6);
+  ctx.fillStyle = "#e7d7a2";
+  ctx.fill();
+}
+
+function loadSpawnIcon() {
+  if (typeof Image !== "function") return;
+  const img = new Image();
+  img.onload = () => { spawnIcon = img; if (msg) draw(); };
+  img.src = "maps/hidden-cube.webp";
 }
 
 /** Square for "same height", triangle up / down for above / below us. */
@@ -923,4 +930,5 @@ function loadSpawns() {
 applyStatic();
 loadMapCatalog();
 loadSpawns();
+loadSpawnIcon();
 connect();

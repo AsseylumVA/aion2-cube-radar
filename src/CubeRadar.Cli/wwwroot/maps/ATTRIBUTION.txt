@@ -18,3 +18,6 @@ Verteron numbers are half of the native fit for Steam build 25800038
 spawns.json lists every possible Hidden Cube spot (Verteron 1440, Altgard 1371)
 in packet centimeters. Source: https://mmorpg-aion2.ru/interactive-map/
 A spot is drawn even after the cube has been collected.
+
+hidden-cube.webp is the Hidden Cube icon from the same interactive map
+(public/images/HiddenCube.webp), CC BY-NC 4.0.
