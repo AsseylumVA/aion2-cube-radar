@@ -150,7 +150,7 @@ internal sealed class OverlayWindow : Form
         if (!IsHandleCreated || size.Width <= 0 || size.Height <= 0) return;
         using var frame = new Bitmap(size.Width, size.Height, PixelFormat.Format32bppArgb);
         using (var g = Graphics.FromImage(frame))
-            OverlayRenderer.Render(g, size, _last, RenderScale, _settings.OverlayRangeM, _settings.ShowEnemies);
+            OverlayRenderer.Render(g, size, _last, RenderScale, _settings.OverlayRangeM, _settings.ShowEnemies, _settings.MapNudges);
         OverlayRenderer.ApplyOpacity(frame, RenderScale, Math.Clamp(_settings.OverlayOpacityPct, 40, 100),
             Math.Clamp(_settings.OverlayListOpacityPct ?? _settings.OverlayOpacityPct, 40, 100));
         var bitmap = frame.GetHbitmap(Color.FromArgb(0)); // premultiplied alpha, as UpdateLayeredWindow needs it
@@ -510,7 +510,8 @@ internal static class OverlayRenderer
     public static Rectangle GearRect(float scale) =>
         Rectangle.Round(new RectangleF((Side - 24) * scale, 1 * scale, 22 * scale, Header * scale - 2 * scale));
 
-    public static void Render(Graphics g, Size size, RadarSnapshot? s, float scale, int rangeM, bool showEnemies = true)
+    public static void Render(Graphics g, Size size, RadarSnapshot? s, float scale, int rangeM, bool showEnemies = true,
+        IReadOnlyDictionary<string, MapNudge>? nudges = null)
     {
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
@@ -551,25 +552,26 @@ internal static class OverlayRenderer
         var r = Side / 2 - Margin;
         var px2world = r / (rangeM * 100f); // pixels per game unit
 
-        // rings, cross, north
-        using (var ring = new Pen(Palette.Line, 1))
+        void Rings()
         {
+            using var ring = new Pen(Palette.Line, 1);
             g.DrawEllipse(ring, cx - r, cy - r, 2 * r, 2 * r);
             g.DrawEllipse(ring, cx - r / 2, cy - r / 2, r, r);
             g.DrawLine(ring, cx - r, cy, cx + r, cy);
             g.DrawLine(ring, cx, cy - r, cx, cy + r);
-        }
-        Text(g, $"{rangeM / 2} m", tiny, Palette.Muted, cx + 3, cy - r / 2 - 12);
-        Text(g, UiText.T("overlay.north"), small, Palette.Text, cx - 4, cy - r - 13);
-        if (SendRadiusM < rangeM)
-        {
-            using var send = new Pen(Color.FromArgb(110, Palette.Me), 1) { DashStyle = DashStyle.Dash };
-            var sr = (float)(SendRadiusM * 100 * px2world);
-            g.DrawEllipse(send, cx - sr, cy - sr, 2 * sr, 2 * sr);
+            Text(g, $"{rangeM / 2} m", tiny, Palette.Muted, cx + 3, cy - r / 2 - 12);
+            Text(g, UiText.T("overlay.north"), small, Palette.Text, cx - 4, cy - r - 13);
+            if (SendRadiusM < rangeM)
+            {
+                using var send = new Pen(Color.FromArgb(110, Palette.Me), 1) { DashStyle = DashStyle.Dash };
+                var sr = (float)(SendRadiusM * 100 * px2world);
+                g.DrawEllipse(send, cx - sr, cy - sr, 2 * sr, 2 * sr);
+            }
         }
 
         if (s is null || me is null)
         {
+            Rings();
             if (showEnemies) EnemyList(g, s, small, tiny);
             Text(g, s is null ? UiText.T("overlay.waiting") : UiText.T("overlay.noPosition"), label, Palette.Muted, cx, cy + r / 2, center: true);
             if (s is not null) Text(g, UiText.T("overlay.buffHint"), tiny, Palette.Muted, cx, cy + r / 2 + 16, center: true);
@@ -584,6 +586,10 @@ internal static class OverlayRenderer
             var e = dx * o.EastX + dy * o.EastY;
             return new PointF(cx + (float)(e * px2world), cy - (float)(n * px2world));
         }
+
+        // Zone picture only. Spawn points stay on the web map; this disc keeps the live cubes.
+        OverlayMap.Draw(g, s, me.X, me.Y, ToScreen, cx, cy, r, nudges);
+        Rings();
 
         // own trail (last ~2 minutes): shows where we came from, i.e. roughly where we are heading
         using (var trail = new Pen(Color.FromArgb(90, Palette.Me), 1.5f))

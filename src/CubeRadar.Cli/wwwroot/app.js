@@ -795,6 +795,20 @@ function rememberNudge(id, extra) {
   const cur = shiftOf(id);
   all[id] = { x: cur.x + extra.x, y: cur.y + extra.y };
   localStorage.setItem("mapNudge", JSON.stringify(all));
+  publishNudge(id);
+}
+
+function publishNudge(id) {
+  const s = shiftOf(id);
+  fetch("/api/map-nudge", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, x: s.x, y: s.y }),
+  }).catch(() => {});
+}
+
+function publishNudges() {
+  for (const id of Object.keys(loadNudges())) publishNudge(id);
 }
 
 document.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => {
@@ -824,6 +838,7 @@ document.getElementById("align-reset").addEventListener("click", () => {
     const all = loadNudges();
     delete all[map.id];
     localStorage.setItem("mapNudge", JSON.stringify(all));
+    publishNudge(map.id);
   }
   ui.align = false;
   syncControls();
@@ -931,4 +946,5 @@ applyStatic();
 loadMapCatalog();
 loadSpawns();
 loadSpawnIcon();
+publishNudges();
 connect();

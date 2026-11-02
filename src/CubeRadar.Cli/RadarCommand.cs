@@ -230,6 +230,16 @@ internal static class RadarCommand
             return Results.Ok();
         });
         app.MapGet("/api/export/sightings.csv", () => Results.Text(store.Export(json: false), "text/csv"));
+        app.MapPost("/api/map-nudge", async (HttpContext ctx) =>
+        {
+            var body = await JsonSerializer.DeserializeAsync<MapNudgeBody>(ctx.Request.Body, Json);
+            if (string.IsNullOrWhiteSpace(body?.Id)) return Results.BadRequest();
+            settings.MapNudges ??= new Dictionary<string, MapNudge>();
+            if (Math.Abs(body.X) < 1e-6 && Math.Abs(body.Y) < 1e-6) settings.MapNudges.Remove(body.Id);
+            else settings.MapNudges[body.Id] = new MapNudge { X = body.X, Y = body.Y };
+            settings.Save();
+            return Results.Ok();
+        });
         app.MapPost("/api/faction", async (HttpContext ctx) =>
         {
             var body = await JsonSerializer.DeserializeAsync<Dictionary<string, string>>(ctx.Request.Body);
@@ -532,3 +542,5 @@ internal static class RadarCommand
         }
     }
 }
+
+file sealed record MapNudgeBody(string? Id, double X, double Y);

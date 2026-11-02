@@ -2,6 +2,13 @@ using System.Text.Json;
 
 namespace CubeRadar.Cli;
 
+/// <summary>Added to a zone map's pixel offset. Comes from the web view's align click.</summary>
+internal sealed class MapNudge
+{
+    public double X { get; set; }
+    public double Y { get; set; }
+}
+
 /// <summary>Per-user radar settings in <c>data/settings.json</c>: north axis, sound, overlay and update check.</summary>
 internal sealed class RadarSettings
 {
@@ -42,6 +49,8 @@ internal sealed class RadarSettings
     public int SoundVolumePct { get; set; } = 80;
     /// <summary>Last zone packet. It arrives once, when the character enters the map, so a later radar start would otherwise not know the zone.</summary>
     public int? LastMapId { get; set; }
+    /// <summary>Pixel shift of a zone picture, shared with the web view so both show the same alignment.</summary>
+    public Dictionary<string, MapNudge> MapNudges { get; set; } = new();
     /// <summary>Look for a newer version on GitHub at start and every 6 hours (single exe only, see Updater).</summary>
     public bool UpdateCheckEnabled { get; set; } = true;
 
