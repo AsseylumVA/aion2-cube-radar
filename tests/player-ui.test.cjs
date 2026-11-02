@@ -149,6 +149,13 @@ test('a spawn pixel stays on that image point when converted to world centimeter
   assert.ok(Math.abs(px - 4730) < 1e-6 && Math.abs(py - 5126) < 1e-6);
 });
 
+test('every published respawn is listed, including the collected Verteron cube', () => {
+  const data = JSON.parse(fs.readFileSync(path.join(__dirname, '../src/CubeRadar.Cli/wwwroot/maps/spawns.json'), 'utf8'));
+  assert.equal(data.zones.verteron.length, 1440);
+  assert.equal(data.zones.altgard.length, 1371);
+  assert.ok(data.zones.verteron.some(([x, y]) => Math.hypot(x - 70962, y - 99276) < 2));
+});
+
 test('invalid API badge strings fall back to the class mapping', () => {
   const b = browser();
   b.update([contact({ rankSymbol: 'R17' })]);

@@ -207,7 +207,11 @@ internal static class RadarCommand
         app.UseWebSockets();
         var files = new PhysicalFileProvider(AppPaths.WebRoot);
         app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = files });
-        app.UseStaticFiles(new StaticFileOptions { FileProvider = files });
+        app.UseStaticFiles(new StaticFileOptions
+        {
+            FileProvider = files,
+            OnPrepareResponse = ctx => ctx.Context.Response.Headers["Cache-Control"] = "no-store",
+        });
         app.MapGet("/api/state", () => Results.Json(State(), Json));
         app.MapGet("/api/spots", (string? zone) =>
             Results.Json(spots is null || zone is null ? [] : spots.InZone(zone).Select(s => new[] { s.X, s.Y, s.Z }).ToList(), Json));

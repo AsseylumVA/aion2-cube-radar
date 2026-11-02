@@ -129,7 +129,7 @@ canvas.align { cursor: crosshair; }
 .enemy-card strong { color: var(--enemy); }
 .enemy-card .enemy-meta, .rank-note { color: var(--muted); font-size: 12px; }
 .rank-note { padding: 0 14px; margin: 0 0 8px; }
-.sw.spot { background: var(--spot); border: 1px solid #5c656e; border-radius: 1px; }
+.sw.spot { background: #e4ebf1; border: 2px solid #14181d; border-radius: 1px; }
 .sw.hist { background: var(--hist); border-radius: 50%; opacity: .7; }
 .tri { font-style: normal; font-size: 11px; margin-right: 4px; color: var(--visible); }
 

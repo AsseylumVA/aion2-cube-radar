@@ -178,10 +178,22 @@ function mapNudgeDelta(map, player, at) {
   return { x: map.scale * (at.x - player.x), y: map.scale * (at.y - player.y) };
 }
 
-let SPAWN_PIXELS = {};
+/** Possible respawns in packet centimeters. Present whether or not a cube is there now. */
+let SPAWNS = {};
 
-function spawnPixels(map) {
-  return (map && SPAWN_PIXELS[map.id]) || [];
+function zoneSpawns(id) {
+  return (id && SPAWNS[id]) || [];
+}
+
+/** Background wins until a zone packet arrives; after that the packet wins in auto mode. */
+function currentZoneId() {
+  if (!msg) return null;
+  const r = msg.radar;
+  const picked = ui.basemap && ui.basemap !== "auto" ? ui.basemap : null;
+  if (r.mapId == null) return picked;
+  if (picked) return picked;
+  const raw = ZONE_MAPS.find((m) => m.mapIds.includes(r.mapId) || (r.zone && m.zone === r.zone));
+  return raw ? raw.id : null;
 }
 
 /** Marker pixel on the zone image back into world centimeters, using the current fit. */
@@ -436,12 +448,13 @@ function draw() {
     const cn = (nMin + nMax) / 2, ce = (eMin + eMax) / 2;
     center = { x: cn * o.nx + ce * o.ex, y: cn * o.ny + ce * o.ey };
   }
-  if (ui.align && ui.mode === "radar" && m && zoneMap && center) {
+  const zoneId = currentZoneId();
+  const respawns = zoneSpawns(zoneId);
+  if (ui.align && ui.mode === "radar" && m && respawns.length && center) {
     let best = Infinity, near = null;
-    for (const [px, py] of spawnPixels(zoneMap)) {
-      const wpt = spawnWorld(zoneMap, px, py);
-      const d = Math.hypot(wpt.x - m.x, wpt.y - m.y);
-      if (d < best) { best = d; near = wpt; }
+    for (const [x, y] of respawns) {
+      const d = Math.hypot(x - m.x, y - m.y);
+      if (d < best) { best = d; near = { x, y }; }
     }
     if (near && best > ui.range * 100) {
       const fitted = frameAround([m, near], w, h);
@@ -470,40 +483,11 @@ function draw() {
     line(8, h / 2, w - 8, h / 2);
   }
   drawText(12, 20, "N ↑", COLORS.text);
-  if (!zoneMap && ui.basemap === "auto") drawText(w / 2, 36, t("web.spawnNeedMap"), COLORS.muted, "center");
+  if (!zoneId && ui.basemap === "auto") drawText(w / 2, 36, t("web.spawnNeedMap"), COLORS.text, "center");
+  else if (zoneId) drawText(12, 38, t("web.spawnCount", respawns.length), COLORS.text);
   if (ui.align) {
-    const hint = !zoneMap ? t("web.alignNeedMap") : !m ? t("web.alignNeedPos") : t("web.alignHint");
+    const hint = !zoneId ? t("web.alignNeedMap") : !m ? t("web.alignNeedPos") : t("web.alignHint");
     drawText(w / 2, 36, hint, COLORS.text, "center");
-  }
-
-  // Respawns are glued to the picture. Ones outside the range sit on the rim so the zone is obvious without a map id.
-  if (zoneMap) {
-    const marks = [];
-    const placed = spawnPixels(zoneMap).map(([px, py]) => {
-      const world = spawnWorld(zoneMap, px, py);
-      const [sx, sy] = toScreen(world);
-      return { sx, sy, world, dist: m ? Math.hypot(world.x - m.x, world.y - m.y) : 0 };
-    });
-    const inside = [];
-    const outside = [];
-    for (const s of placed) {
-      (s.sx > 14 && s.sx < w - 14 && s.sy > 14 && s.sy < h - 14 ? inside : outside).push(s);
-    }
-    outside.sort((a, b) => a.dist - b.dist);
-    for (const s of inside) {
-      drawSpawn(s.sx, s.sy);
-      marks.push({ sx: s.sx, sy: s.sy, world: s.world });
-    }
-    for (const s of outside.slice(0, 6)) {
-      const a = Math.atan2(s.sy - h / 2, s.sx - w / 2);
-      const rx = w / 2 - 16, ry = h / 2 - 16;
-      const k = 1 / Math.max(Math.abs(Math.cos(a)) / rx, Math.abs(Math.sin(a)) / ry);
-      const x = w / 2 + Math.cos(a) * k, y = h / 2 + Math.sin(a) * k;
-      drawSpawn(x, y);
-      if (m) drawText(x + 8, y - 6, `${Math.max(1, Math.round(s.dist / 100))} m`, COLORS.muted);
-      marks.push({ sx: x, sy: y, world: s.world });
-    }
-    frame.spawns = marks;
   }
 
   // possible spots and history
@@ -536,6 +520,40 @@ function draw() {
     dot([x, y], 6, COLORS.me);
     ctx.globalAlpha = 1;
     drawText(x - 10, y + 16, stale || m.ring ? t("web.youAgo", fmtAge(m.age)) : t("web.you"), COLORS.me, "right");
+  }
+
+  // Possible respawns, known ahead of time. A collected cube leaves the point in place.
+  // Drawn after the player dot so the spot underfoot stays visible, and before live cubes.
+  if (respawns.length) {
+    const marks = [];
+    const live = r.cubes;
+    const placed = [];
+    for (const [x, y] of respawns) {
+      if (live.some((c) => Math.hypot(c.x - x, c.y - y) < 300)) continue;
+      const world = { x, y };
+      const [sx, sy] = toScreen(world);
+      placed.push({ sx, sy, world, dist: m ? Math.hypot(x - m.x, y - m.y) : 0 });
+    }
+    const inside = [];
+    const outside = [];
+    for (const s of placed) {
+      (s.sx > 14 && s.sx < w - 14 && s.sy > 14 && s.sy < h - 14 ? inside : outside).push(s);
+    }
+    outside.sort((a, b) => a.dist - b.dist);
+    for (const s of inside) {
+      drawSpawn(s.sx, s.sy, s.dist < 400);
+      marks.push({ sx: s.sx, sy: s.sy, world: s.world });
+    }
+    for (const s of outside.slice(0, 8)) {
+      const a = Math.atan2(s.sy - h / 2, s.sx - w / 2);
+      const rx = w / 2 - 16, ry = h / 2 - 16;
+      const k = 1 / Math.max(Math.abs(Math.cos(a)) / rx, Math.abs(Math.sin(a)) / ry);
+      const x = w / 2 + Math.cos(a) * k, y = h / 2 + Math.sin(a) * k;
+      drawSpawn(x, y, false);
+      if (m) drawText(x + 10, y - 8, `${Math.max(1, Math.round(s.dist / 100))} m`, COLORS.muted);
+      marks.push({ sx: x, sy: y, world: s.world });
+    }
+    frame.spawns = marks;
   }
 
   // cubes
@@ -597,14 +615,16 @@ function draw() {
   drawHeightStrip(full, h, r, m);
 }
 
-function drawSpawn(x, y) {
-  const s = 6;
+function drawSpawn(x, y, here) {
+  const s = here ? 12 : 6;
   ctx.beginPath();
   ctx.rect(x - s, y - s, s * 2, s * 2);
-  ctx.fillStyle = COLORS.spot;
-  ctx.strokeStyle = "#2c333b";
-  ctx.lineWidth = 1.5;
-  ctx.fill();
+  ctx.lineWidth = here ? 2.5 : 1.75;
+  ctx.strokeStyle = "#14181d";
+  if (!here) {
+    ctx.fillStyle = "#e4ebf1";
+    ctx.fill();
+  }
   ctx.stroke();
   ctx.lineWidth = 1;
 }
@@ -896,7 +916,7 @@ function loadSpawns() {
     xhr.open("GET", "maps/spawns.json", false);
     xhr.send();
     if (xhr.status && xhr.status !== 200) return;
-    SPAWN_PIXELS = JSON.parse(xhr.responseText).zones || {};
+    SPAWNS = JSON.parse(xhr.responseText).zones || {};
   } catch { /* tests, or the page is not served over HTTP */ }
 }
 
