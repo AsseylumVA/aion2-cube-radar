@@ -40,6 +40,8 @@ internal sealed class RadarSettings
     public string? SoundFile { get; set; }
     /// <summary>Volume of the sound, 5–100 %.</summary>
     public int SoundVolumePct { get; set; } = 80;
+    /// <summary>Last zone packet. It arrives once, when the character enters the map, so a later radar start would otherwise not know the zone.</summary>
+    public int? LastMapId { get; set; }
     /// <summary>Look for a newer version on GitHub at start and every 6 hours (single exe only, see Updater).</summary>
     public bool UpdateCheckEnabled { get; set; } = true;
 

@@ -103,6 +103,7 @@ internal static class RadarCommand
             try { engine.SetNorth(savedNorth); }
             catch (FormatException) { settings.North = null; }
         }
+        if (settings.LastMapId is int savedMap) engine.RestoreMap(savedMap);
 
         string? dir = null;
         if (replay is null)
@@ -140,13 +141,21 @@ internal static class RadarCommand
             npcapDropped = sniffer?.Health()?.Dropped,
             recording = record ? Path.Combine(dir!, "raw.pcapng") : null,
         };
-        object State() => new
+        object State()
         {
-            radar = Localize(engine.Snapshot()),
-            capture = CaptureView(),
-            wallMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-            lang = UiText.Language,
-        };
+            if (engine.MapId is int seen && seen != settings.LastMapId)
+            {
+                settings.LastMapId = seen;
+                settings.Save();
+            }
+            return new
+            {
+                radar = Localize(engine.Snapshot()),
+                capture = CaptureView(),
+                wallMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                lang = UiText.Language,
+            };
+        }
 
         using var hub = new SnapshotHub(() => JsonSerializer.SerializeToUtf8Bytes(State(), Json));
         UiText.Changed += hub.Kick;

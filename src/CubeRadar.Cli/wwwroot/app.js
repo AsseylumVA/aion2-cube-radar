@@ -88,6 +88,7 @@ function onState() {
   firstUpdate = false;
   if (fresh.length) announce(fresh);
   if (r.zone && r.zone !== spotsZone) loadZone(r.zone);
+  if (r.mapId != null) localStorage.setItem("mapId", String(r.mapId));
   const sel = document.getElementById("north");
   if (document.activeElement !== sel) sel.value = r.orientation.north;
   const base = document.getElementById("basemap");
@@ -201,12 +202,19 @@ function frameAround(points, w, h) {
   return { scale, center: { x: cn * o.nx + ce * o.ex, y: cn * o.ny + ce * o.ey } };
 }
 
+function rememberedMapId() {
+  const n = Number(localStorage.getItem("mapId"));
+  return Number.isInteger(n) ? n : null;
+}
+
 function currentMap() {
   if (!ZONE_MAPS.length || !msg) return null;
   const r = msg.radar;
+  // The zone packet arrives once, on entry. Keep the last id so a radar started mid-zone still picks the picture.
+  const id = r.mapId != null ? r.mapId : rememberedMapId();
   const raw = ui.basemap && ui.basemap !== "auto"
     ? ZONE_MAPS.find((m) => m.id === ui.basemap)
-    : ZONE_MAPS.find((m) => (r.mapId != null && m.mapIds.includes(r.mapId)) || (r.zone && m.zone === r.zone));
+    : ZONE_MAPS.find((m) => (id != null && m.mapIds.includes(id)) || (r.zone && m.zone === r.zone));
   return raw ? withShift(raw) : null;
 }
 
@@ -468,20 +476,38 @@ function draw() {
     line(8, h / 2, w - 8, h / 2);
   }
   drawText(12, 20, "N ↑", COLORS.text);
+  if (!zoneMap && ui.basemap === "auto") drawText(w / 2, 36, t("web.spawnNeedMap"), COLORS.muted, "center");
   if (ui.align) {
     const hint = !zoneMap ? t("web.alignNeedMap") : !m ? t("web.alignNeedPos") : t("web.alignHint");
     drawText(w / 2, 36, hint, COLORS.text, "center");
   }
 
-  // known respawns stay glued to the picture; a click on one slides that picture point under the player
+  // Respawns are glued to the picture. Ones outside the range sit on the rim so the zone is obvious without a map id.
   if (zoneMap) {
     const marks = [];
-    for (const [px, py] of spawnPixels(zoneMap)) {
+    const placed = spawnPixels(zoneMap).map(([px, py]) => {
       const world = spawnWorld(zoneMap, px, py);
       const [sx, sy] = toScreen(world);
-      marks.push({ sx, sy, world });
-      if (sx < -12 || sy < -12 || sx > w + 12 || sy > h + 12) continue;
-      drawSpawn(sx, sy);
+      return { sx, sy, world, dist: m ? Math.hypot(world.x - m.x, world.y - m.y) : 0 };
+    });
+    const inside = [];
+    const outside = [];
+    for (const s of placed) {
+      (s.sx > 14 && s.sx < w - 14 && s.sy > 14 && s.sy < h - 14 ? inside : outside).push(s);
+    }
+    outside.sort((a, b) => a.dist - b.dist);
+    for (const s of inside) {
+      drawSpawn(s.sx, s.sy);
+      marks.push({ sx: s.sx, sy: s.sy, world: s.world });
+    }
+    for (const s of outside.slice(0, 6)) {
+      const a = Math.atan2(s.sy - h / 2, s.sx - w / 2);
+      const rx = w / 2 - 16, ry = h / 2 - 16;
+      const k = 1 / Math.max(Math.abs(Math.cos(a)) / rx, Math.abs(Math.sin(a)) / ry);
+      const x = w / 2 + Math.cos(a) * k, y = h / 2 + Math.sin(a) * k;
+      drawSpawn(x, y);
+      if (m) drawText(x + 8, y - 6, `${Math.max(1, Math.round(s.dist / 100))} m`, COLORS.muted);
+      marks.push({ sx: x, sy: y, world: s.world });
     }
     frame.spawns = marks;
   }
@@ -578,11 +604,11 @@ function draw() {
 }
 
 function drawSpawn(x, y) {
-  const s = 4.5;
+  const s = 6;
   ctx.beginPath();
   ctx.rect(x - s, y - s, s * 2, s * 2);
   ctx.fillStyle = COLORS.spot;
-  ctx.strokeStyle = "#5c656e";
+  ctx.strokeStyle = "#2c333b";
   ctx.lineWidth = 1.5;
   ctx.fill();
   ctx.stroke();

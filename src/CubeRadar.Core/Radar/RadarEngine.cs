@@ -117,6 +117,17 @@ public sealed partial class RadarEngine
         get { lock (_gate) return _northName; }
     }
 
+    /// <summary>Use a map id learned earlier. The server sends it only when the character enters the zone.</summary>
+    public void RestoreMap(int mapId)
+    {
+        lock (_gate)
+        {
+            if (MapId is not null) return;
+            MapId = mapId;
+            if (_cfg.MapZones.TryGetValue(mapId, out var zone)) Zone = zone;
+        }
+    }
+
     public void SetNorth(string north)
     {
         var parsed = Orientation.Parse(north); // throws FormatException for anything else
