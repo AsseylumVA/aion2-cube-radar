@@ -123,10 +123,10 @@ test('badges stay visible when crowded names are suppressed and are painted over
 
 test('Verteron cube 70962,99276 lands on the calibrated map pixel', () => {
   const b = browser();
-  const map = { minX: -304800, minY: -304800, maxX: 304800, maxY: 304800, tilesX: 8, tilesY: 8, tile: 1024 };
+  const map = { scale: 0.009791754817436571, offsetX: 4035.4689879924563, offsetY: 4153.7253769234385 };
   const [px, py] = b.context.mapPixel(map, 70962, 99276);
-  assert.ok(Math.abs(px - 5049.6) < 0.2, px);
-  assert.ok(Math.abs(py - 5430.1) < 0.2, py);
+  assert.ok(Math.abs(px - 4730.31) < 0.05, px);
+  assert.ok(Math.abs(py - 5125.81) < 0.05, py);
 });
 
 test('invalid API badge strings fall back to the class mapping', () => {

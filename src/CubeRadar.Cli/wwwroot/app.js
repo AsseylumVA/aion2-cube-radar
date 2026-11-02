@@ -140,12 +140,19 @@ function heightInfo(dz) {
     : { cls: "down", text: t("height.below", a), short: `▼${a}` };
 }
 
-/** World centimeters to pixels on the zone image. Image +x is world +x, image +y is world +y. */
+/** World centimeters to pixels. Image +x is world +x and image +y is world +y; the fit is not centred on 0. */
 function mapPixel(map, x, y) {
-  return [
-    (x - map.minX) / (map.maxX - map.minX) * map.tilesX * map.tile,
-    (y - map.minY) / (map.maxY - map.minY) * map.tilesY * map.tile,
-  ];
+  return [map.offsetX + map.scale * x, map.offsetY + map.scale * y];
+}
+
+function mapBounds(map) {
+  const w = map.tilesX * map.tile, h = map.tilesY * map.tile;
+  return {
+    minX: -map.offsetX / map.scale,
+    minY: -map.offsetY / map.scale,
+    maxX: (w - map.offsetX) / map.scale,
+    maxY: (h - map.offsetY) / map.scale,
+  };
 }
 
 function currentMap() {
@@ -168,18 +175,19 @@ function tileImage(map, col, row) {
 
 function drawZoneMap(map, toScreen, w, h) {
   if (!map || typeof Image !== "function") return;
-  const spanX = (map.maxX - map.minX) / map.tilesX;
-  const spanY = (map.maxY - map.minY) / map.tilesY;
   ctx.save();
   ctx.beginPath();
   ctx.rect(0, 0, w, h);
   ctx.clip();
   for (let row = 0; row < map.tilesY; row++) {
     for (let col = 0; col < map.tilesX; col++) {
-      const x0 = map.minX + col * spanX, y0 = map.minY + row * spanY;
+      const x0 = (col * map.tile - map.offsetX) / map.scale;
+      const y0 = (row * map.tile - map.offsetY) / map.scale;
+      const x1 = ((col + 1) * map.tile - map.offsetX) / map.scale;
+      const y1 = ((row + 1) * map.tile - map.offsetY) / map.scale;
       const o = toScreen({ x: x0, y: y0 });
-      const ox = toScreen({ x: x0 + spanX, y: y0 });
-      const oy = toScreen({ x: x0, y: y0 + spanY });
+      const ox = toScreen({ x: x1, y: y0 });
+      const oy = toScreen({ x: x0, y: y1 });
       const xs = [o[0], ox[0], oy[0], ox[0] + oy[0] - o[0]];
       const ys = [o[1], ox[1], oy[1], ox[1] + oy[1] - o[1]];
       if (Math.max(...xs) < 0 || Math.min(...xs) > w || Math.max(...ys) < 0 || Math.min(...ys) > h) continue;
@@ -366,8 +374,9 @@ function draw() {
     scale = (Math.min(w, h) / 2 - 24) / (ui.range * 100);
   } else {
     const pts = [...r.cubes, ...positionedEnemies, ...r.trail.filter((p) => p.length === 2).map((p) => ({ x: p[0], y: p[1] })), ...(m ? [m] : [])];
-    const fit = pts.length ? pts : (zoneMap
-      ? [{ x: zoneMap.minX, y: zoneMap.minY }, { x: zoneMap.maxX, y: zoneMap.maxY }]
+    const bounds = zoneMap ? mapBounds(zoneMap) : null;
+    const fit = pts.length ? pts : (bounds
+      ? [{ x: bounds.minX, y: bounds.minY }, { x: bounds.maxX, y: bounds.maxY }]
       : zoneSpots);
     if (!fit.length) return drawText(w / 2, h / 2, t("web.noData"), COLORS.muted, "center");
     const ns = fit.map((p) => p.x * o.nx + p.y * o.ny), es = fit.map((p) => p.x * o.ex + p.y * o.ey);

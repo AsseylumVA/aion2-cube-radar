@@ -10,6 +10,7 @@ https://creativecommons.org/licenses/by-nc/4.0/
 Non-commercial use only. Credit the author. They are not covered by the GPL-3.0
 license of the Cube Radar source code.
 
-The plane [-304800, +304800] cm is the client's world-map size on Steam build
-25800038, the same build the radar's Verteron captures came from. Image +x is
-world +x and image +y is world +y, so north (−Y) is up.
+These 8192 px images are half the native world-map texture. Pixel = offset +
+scale * world centimeters, x to the right and y downward, with no flip. The
+Verteron numbers are half of the native fit for Steam build 25800038
+(scale 0.01958351 px/cm, offset 8070.94, 8307.45 on the 16384 px map).

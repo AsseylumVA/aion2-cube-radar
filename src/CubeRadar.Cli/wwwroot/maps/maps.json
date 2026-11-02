@@ -10,13 +10,12 @@
       "mapIds": [1010],
       "file": "World_L_A",
       "path": "maps/verteron",
-      "minX": -304800,
-      "minY": -304800,
-      "maxX": 304800,
-      "maxY": 304800,
       "tilesX": 8,
       "tilesY": 8,
-      "tile": 1024
+      "tile": 1024,
+      "scale": 0.009791754817436571,
+      "offsetX": 4035.4689879924563,
+      "offsetY": 4153.7253769234385
     },
     {
       "id": "altgard",
@@ -24,13 +23,12 @@
       "mapIds": [],
       "file": "World_D_A",
       "path": "maps/altgard",
-      "minX": -304800,
-      "minY": -304800,
-      "maxX": 304800,
-      "maxY": 304800,
       "tilesX": 8,
       "tilesY": 8,
-      "tile": 1024
+      "tile": 1024,
+      "scale": 0.0098227439264612,
+      "offsetX": 4137.781824319782,
+      "offsetY": 4062.9907075320293
     }
   ]
 }
