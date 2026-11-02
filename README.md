@@ -1,201 +1,194 @@
-# Cube Radar: Hidden Cube Radar für Aion 2
+**English** · [Русский](README.ru.md)
 
-**Cube Radar** ist ein Mini-Radar-Overlay für **Aion 2 (Global)**, das live anzeigt, wo gerade **Hidden Cubes**
-(versteckte Würfel) stehen: Entfernung, Richtung und Höhe. Es liest per Npcap den Server→Client-Traffic mit, wie
-Wireshark. Es betreibt kein Memory-Reading und keine Injection und sendet nichts an das Spiel. Die einzige
-Internetverbindung ist die abschaltbare Update-Suche bei GitHub (nur die fertige exe).
+# Cube Radar: Hidden Cube Radar for Aion 2
 
-- **Mini-Radar über dem Spiel:** Hidden Cubes in deiner Nähe mit Entfernung, Richtung und Höhe (▲ über dir, ▼ unter
-  dir), Ton bei jedem neuen Cube
-- **Status je Cube:** sichtbar, außer Sicht, wird geöffnet, geöffnet, weg
-- **Gegner im selben Radar:** rote Rauten und eine Liste mit Name, Fraktion, PvP-Rang und Entfernung (Global/Abyss,
-  erste Testversion). Fünf Rang-Codes sind mit Screenshots abgeglichen; die übrige angenommene Rangfolge ist mit `*` markiert.
-- **Web-Ansicht** mit Karte, Liste und eigener Spot-Datenbank (Export als CSV/JSON)
-- **Eine exe** für Windows 10/11 ohne Installation, aktualisiert sich auf Klick selbst
-- Bestätigt in **Verteron**; in anderen Gebieten lernt das Radar die Cube-Kennung selbst
-  ([Wo funktioniert es?](docs/ANLEITUNG.md#7-wo-funktioniert-es))
+**Cube Radar** is a mini-radar overlay for **Aion 2 (Global)** that shows live where **Hidden Cubes** are: distance,
+direction and height. It reads server→client traffic with Npcap, the same way Wireshark does. It does no memory
+reading and no injection, and it sends nothing to the game. The only internet connection is the optional update check
+on GitHub (the finished exe only).
+
+The interface is Russian by default. English is a switch in the settings and in the web view. The
+[guide](docs/ANLEITUNG.md) stays German.
+
+- **Mini-radar over the game:** nearby Hidden Cubes with distance, direction and height (▲ above you, ▼ below you),
+  and a sound for every new cube
+- **A status for each cube:** visible, out of view, being opened, opened, gone
+- **Enemies on the same radar:** red diamonds and a list with name, faction, PvP rank and distance (Global/Abyss,
+  first test version). Five rank codes are checked against screenshots; the rest of the assumed order is marked with `*`
+- **Web view** with a map, a list and its own spot database (export as CSV/JSON)
+- **One exe** for Windows 10/11, no installation, updates itself on click
+- Confirmed in **Verteron**; in other areas the radar learns the cube id on its own
+  ([Where does it work?](docs/ANLEITUNG.md#7-wo-funktioniert-es))
 
 ## Download
 
-Fertige Version für Windows 10/11 (64 Bit): unter [**Releases**](https://github.com/AsseylumVA/aion2-cube-radar/releases/latest)
-die Datei `Cube.Radar.exe` herunterladen und doppelklicken. Eine Installation ist nicht nötig, .NET ist enthalten.
-Voraussetzung ist [Npcap](https://npcap.com) (Installer mit Standardoptionen). Beim Start fragt Windows nach
-Admin-Rechten, damit das Overlay die Alt-Taste erkennt (abschaltbar, siehe unten). Wie man das Mini-Radar liest und
-bedient, steht in der **[Anleitung](docs/ANLEITUNG.md)**. Ab Version 0.8.0 meldet sich das Radar selbst, wenn es
-eine neue Version gibt, und aktualisiert sich auf Klick ([Updates](docs/ANLEITUNG.md#8-updates)).
+The Windows 10/11 (64-bit) build is on [**Releases**](https://github.com/AsseylumVA/aion2-cube-radar/releases/latest):
+download `Cube.Radar.exe` and double-click it. Nothing else has to be installed; .NET is included. You do need
+[Npcap](https://npcap.com) (the installer with its default options). On startup Windows asks for administrator rights
+so the overlay can see the Alt key (this can be turned off; see below). How to read and use the mini-radar is in the
+**[guide](docs/ANLEITUNG.md)** (German). From version 0.8.0 the radar says so when a newer version exists and updates
+itself on click ([Updates](docs/ANLEITUNG.md#8-updates)).
 
-> **Achtung:** Laut einem anderen Tool-Autor stuft der NCSOFT-Support Software, die Spieldaten mitliest, als Verstoß
-> gegen die Nutzungsbedingungen ein. Die Nutzung erfolgt auf eigenes Risiko.
-
-## English
-
-Cube Radar is a hidden cube finder for **Aion 2 (Global)**: a small radar overlay on top of the game that shows live
-where **Hidden Cubes** are, with distance, direction and height. It passively reads the game's network traffic via
-Npcap, like Wireshark. No memory reading, no injection, nothing is sent to the game. Windows 10/11, a single exe, no
-installation: download `Cube.Radar.exe` from [Releases](https://github.com/AsseylumVA/aion2-cube-radar/releases/latest)
-and install [Npcap](https://npcap.com) first. The interface is Russian by default, with an English switch in the
-settings and the web view. The guide stays German.
-
-> **Warning:** According to another tool author, NCSOFT support considers software that reads game data a violation
+> **Warning:** According to another tool author, NCSOFT support treats software that reads game data as a violation
 > of the terms of service. Use at your own risk.
 
-## Aufbau
+## Layout
 
-Stand: **Phase 3 (Radar) abgenommen**. Der Hidden Cube ist in Verteron identifiziert (Templates 1200039 und 1200041,
-Sende-Radius ≈ 100 m). Die eigene Position kommt aus vier ereignisgebundenen Quellen. Alle Erkenntnisse stehen in
+Status: **phase 3 (radar) is complete**. The Hidden Cube is identified in Verteron (templates 1200039 and 1200041,
+send radius ≈ 100 m). Your own position comes from four event-driven sources. Everything learned so far is in
 [`docs/FINDINGS.md`](docs/FINDINGS.md).
 
-| Pfad | Inhalt |
+| Path | Contents |
 |---|---|
-| `src/CubeRadar.Core` | Capture (Npcap/SharpPcap), Flow-Erkennung, TCP-Reassembly, Framing/LZ4 (abgeleitet von cyberbadger6969/aion2-dps-meter, GPL-3.0), pcapng-Writer, JSONL-Dump, Census |
-| `src/CubeRadar.Core/Radar` | `RadarEngine` (Cube-Status, eigene ID/Position, Ring-Fix, Template-Lernen), SQLite-Store, Spot-Index |
-| `src/CubeRadar.Cli` | `cuberadar`: `radar`, `dump live`, `dump <datei>`, `census`, `devices`, `conns`; Marker per globalem Hotkey oder Konsole; Web-UI in `wwwroot/` |
-| `tests/CubeRadar.Tests` | xunit: synthetische Framing-Tests, pcapng-Roundtrip, echte Stream-Fixtures |
-| `tools/` | Python (nur Stdlib): `a2wire.py` (unabhängiger Decoder), `census.py`, `crosscheck.py`, `make_fixture.py`, `objects.py` (Objekt-Lebenszyklus je Template), `radius.py` (Sende-Radius), `selfscan.py` (f32-Triplet-Scan nach der eigenen Position), `selftrack.py` (eigene Positionsspur, CSV/SVG), `ringfix.py` (Fallback-Schätzung) |
-| `config/opcodes.json` | Opcode-Namen inkl. Belegstatus, damit Patches ohne Code-Änderung abgefangen werden können |
-| `config/cubes.json` | Cube-Signatur: Templates je Zone, Öffnungs-Item, gemessener Sende-Radius |
-| `config/radar.json` | Opcodes des Radars, Selbstcheck, Nordachse, Haltezeiten, Pfad zur optionalen Spot-Liste |
-| `data/radar.db` | eigene Spot-Datenbank (SQLite, nicht im Git) |
-| `fixtures/` | echte Stream-Ausschnitte (Hex) mit erwarteten Frames |
-| `captures/` | Aufnahmen (nicht im Git) |
-| `ref/` | Referenz-Repos (nur gelesen, nicht im Git) |
+| `src/CubeRadar.Core` | Capture (Npcap/SharpPcap), flow detection, TCP reassembly, framing/LZ4 (derived from cyberbadger6969/aion2-dps-meter, GPL-3.0), pcapng writer, JSONL dump, census |
+| `src/CubeRadar.Core/Radar` | `RadarEngine` (cube status, own id/position, ring fix, template learning), SQLite store, spot index |
+| `src/CubeRadar.Cli` | `cuberadar`: `radar`, `dump live`, `dump <file>`, `census`, `devices`, `conns`; markers via a global hotkey or the console; web UI in `wwwroot/` |
+| `tests/CubeRadar.Tests` | xunit: synthetic framing tests, pcapng round trip, real stream fixtures |
+| `tools/` | Python (stdlib only): `a2wire.py` (independent decoder), `census.py`, `crosscheck.py`, `make_fixture.py`, `objects.py` (object lifetime per template), `radius.py` (send radius), `selfscan.py` (f32 triplet scan for your own position), `selftrack.py` (own position track, CSV/SVG), `ringfix.py` (fallback estimate) |
+| `config/opcodes.json` | Opcode names, including how well each one is confirmed, so a patch can be handled without a code change |
+| `config/cubes.json` | Cube signature: templates per zone, opening item, measured send radius |
+| `config/radar.json` | Radar opcodes, self-check, north axis, hold times, path to the optional spot list |
+| `data/radar.db` | Your own spot database (SQLite, not in git) |
+| `fixtures/` | Real stream excerpts (hex) with the frames they should produce |
+| `captures/` | Recordings (not in git) |
+| `ref/` | Reference repos (read only, not in git) |
 
-## Bauen und testen
+## Build and test
 
 ```powershell
 dotnet build CubeRadar.slnx -c Release
 dotnet test CubeRadar.slnx -c Release
 ```
 
-Die ausführbare Datei liegt dann unter `src\CubeRadar.Cli\bin\Release\net10.0-windows\cuberadar.exe`. Kurz: `.\cuberadar.cmd`.
+The executable is then at `src\CubeRadar.Cli\bin\Release\net10.0-windows\cuberadar.exe`. Short form: `.\cuberadar.cmd`.
 
-## Neue Version veröffentlichen
+## Publish a new version
 
-GitHub baut und veröffentlicht die exe selbst ([`.github/workflows/release.yml`](.github/workflows/release.yml)):
+GitHub builds and publishes the exe itself ([`.github/workflows/release.yml`](.github/workflows/release.yml)):
 
-1. `<Version>` in `src/CubeRadar.Cli/CubeRadar.Cli.csproj` und `src/CubeRadar.Core/CubeRadar.Core.csproj` erhöhen,
-   committen, pushen.
-2. Tag mit Beschreibung anlegen und pushen:
+1. Raise `<Version>` in `src/CubeRadar.Cli/CubeRadar.Cli.csproj` and `src/CubeRadar.Core/CubeRadar.Core.csproj`,
+   commit and push.
+2. Create a tag with a description and push it:
    ```powershell
-   git tag -a v0.8.1 -m "- Was neu ist, ein Punkt pro Zeile"
+   git tag -a v0.8.1 -m "- What is new, one item per line"
    git push origin v0.8.1
    ```
-   Die Tag-Beschreibung wird im Release zu „Neu in 0.8.1“. Ohne Beschreibung stehen dort die Commit-Betreffs seit dem
-   letzten Tag.
-3. Die Action prüft, dass Tag und Version passen, testet, baut `Cube Radar.exe` und legt das Release mit
-   `Cube.Radar.exe` und Prüfsumme an. Laufende Radare melden das Update beim nächsten Start bzw. innerhalb von 6 Stunden.
+   The tag description becomes “What's new in 0.8.1” in the release. Without a description, the release lists the
+   commit subjects since the previous tag.
+3. The Action checks that the tag matches the version, runs the tests, builds `Cube Radar.exe` and publishes the
+   release with `Cube.Radar.exe` and its checksum. A running radar reports the update on the next start, or within
+   6 hours.
 
-Lokal baut `tools\package.ps1` dieselbe exe; läuft sie gerade, wird sie vorher per `--quit` beendet.
+`tools\package.ps1` builds the same exe locally. If it is running, it is asked to quit first via `--quit`.
 
 ## Radar
 
-**Als einzelne Datei zum Weitergeben:** `powershell -File tools\package.ps1` baut `dist\Cube Radar.exe`.
-- Die Datei enthält .NET, die Web-Oberfläche und die Standard-Konfiguration; ein Doppelklick startet direkt das
-  Overlay, ohne Konsole.
-- Daten (Aufnahmen, Datenbank, Einstellungen, Log) liegen in `%LOCALAPPDATA%\CubeRadar`.
-- Eine eigene Konfigurationsdatei in `%LOCALAPPDATA%\CubeRadar\config\` (z. B. `radar.json` mit neuen Opcodes nach
-  einem Patch) hat Vorrang vor der eingebauten.
-- Das Programm-Symbol erzeugt `tools\make_icon.ps1` (`assets\cuberadar.ico`).
+**As a single file to hand out:** `powershell -File tools\package.ps1` builds `dist\Cube Radar.exe`.
+- The file contains .NET, the web UI and the default configuration. A double-click starts the overlay directly,
+  with no console window.
+- Data (recordings, database, settings, log) is stored in `%LOCALAPPDATA%\CubeRadar`.
+- Your own config file in `%LOCALAPPDATA%\CubeRadar\config\` (for example `radar.json` with new opcodes after a
+  patch) overrides the one built in.
+- The program icon is produced by `tools\make_icon.ps1` (`assets\cuberadar.ico`).
 
-Im Repository:
+From the repository:
 
 ```powershell
-.\cuberadar.cmd radar      # volle Ansicht: Browser + Overlay + Konsole
-.\overlay.cmd              # nur das Overlay: kein Browser, keine Konsole, Tray-Symbol
+.\cuberadar.cmd radar      # full view: browser + overlay + console
+.\overlay.cmd              # overlay only: no browser, no console, tray icon
 ```
 
-**Nur-Overlay-Modus** (`overlay.cmd` bzw. `radar --overlay-only`):
-- Es läuft unsichtbar im Hintergrund; sichtbar ist nur das Mini-Radar über dem Spiel.
-- Das Tray-Symbol unten rechts bietet per Rechtsklick: Einstellungen (auch per Doppelklick), Overlay ein/aus, Zoom,
-  „Web-Ansicht öffnen“ und „Beenden“.
-- **Einstellungen** öffnest du über den ⚙-Knopf oben rechts im Overlay oder über das Tray-Symbol. Änderungen wirken
-  sofort und werden gespeichert:
-  - Ton an/aus mit „Testen“, Lautstärke (beim Verstellen hörst du den Ton), optional eine eigene .wav-Datei.
-    Im Windows-Lautstärkemixer steht „Cube Radar“ ab dem Start als eigene App, unabhängig von „Systemsounds“.
-  - Zoom, Größe (75–150 %) und Deckkraft, getrennt für das Radar und die Namensliste der Gegner darunter
-  - Nordrichtung
-  - „Nur wenn Aion 2 im Vordergrund“ und „In Menüs ausblenden“
-  - Knöpfe: Position zurücksetzen, Web-Ansicht öffnen, Radar beenden
-- Die Ausgaben landen in `captures\radar_<datum_zeit>\radar.log`. Aufzeichnung, Datenbank, Piepton und Marker-Hotkeys
-  laufen wie gewohnt.
+**Overlay-only mode** (`overlay.cmd`, or `radar --overlay-only`):
+- It runs invisibly in the background. The only thing on screen is the mini-radar over the game.
+- Right-click the tray icon at the bottom right for: Settings (also a double-click), overlay on/off, zoom,
+  “Open web view” and “Quit”.
+- **Settings** open from the ⚙ button at the top right of the overlay, or from the tray icon. Changes apply
+  immediately and are saved:
+  - Sound on/off with “Test”, volume (you hear the sound while you move the slider), and an optional .wav file
+    of your own. From startup, “Cube Radar” is its own app in the Windows volume mixer, separate from system sounds.
+  - Zoom, size (75–150 %) and opacity, separately for the radar and for the enemy name list below it
+  - North
+  - “Only when Aion 2 is in front” and “Hide in menus”
+  - Buttons: reset position, open the web view, quit the radar
+- Output goes to `captures\radar_<date_time>\radar.log`. Recording, the database, the beep and the marker hotkeys
+  keep working as usual.
 
-Die volle Ansicht öffnet `http://127.0.0.1:5313` im Browser.
-- **Radar** zeigt die Umgebung um dich (Nord oben, Ringe, Sichtweite ≈ 100 m gestrichelt).
-- **Höhe:** ▲ = Cube über dir, ▼ = unter dir, ■ = gleiche Höhe (± 3 m). Die Höhenleiste rechts im Radar zeigt deine
-  Höhe als Mittellinie. In der Liste steht „▲ 38 m über dir“ usw. Ist deine Position älter als 5 s, steht ihr Alter
-  dabei.
-- **Karte** zeigt alle Cubes, deine Spur und, falls vorhanden, die möglichen Spots der Zone.
-- **Liste:** Distanz, Kompassrichtung, Höhenunterschied, „gesehen vor“, „existiert seit“ und Status. Die Status sind:
-  sichtbar, außer Sicht (steht vermutlich noch), wird geöffnet, geöffnet (von dir oder Spieler N), weg.
-- **„Ton an“ und „Hinweise an“** im Browser geben einen Ton bzw. eine Desktop-Benachrichtigung bei jedem neuen Cube.
-  Die Konsole piept zusätzlich (abschalten mit `--no-beep`).
-- **Eigene Position:** Sie kommt nur bei Ereignissen, etwa wenn du Buffs wirkst oder angegriffen wirst. Die Kopfzeile
-  zeigt, wie alt sie ist. Ohne frische Position zeigt das Radar eine Schätzung mit Unsicherheitskreis.
-- **Mini-Radar über dem Spiel (Overlay):** Ein kleines Fenster liegt immer im Vordergrund und nimmt dem Spiel nie den
-  Fokus.
-  - Inhalt: Norden oben, du in der Mitte, Ringe, Sichtweite (~100 m) gestrichelt und deine letzte Laufspur. Die Spur
-    zeigt, woher du kommst, weil das Spiel keine Blickrichtung sendet.
-  - Cubes erscheinen als ▲/▼/■ (über, unter oder auf deiner Höhe) mit „86 m ▲38“. Liegt ein Cube außerhalb des Zooms,
-    zeigt ein »-Zeiger am Rand in seine Richtung.
-  - Die Kopfzeile zeigt das Alter deiner Position und den Zoom.
-  - **Verschieben:** `Strg+Umschalt+F11` öffnet die Einstellungen; solange sie offen sind, bleibt das Overlay
-    sichtbar und lässt sich mit der Maus ziehen. Die Position wird beim Loslassen gespeichert.
-  - **Zoom:** `Strg+Umschalt+F12`, oder das Mausrad über dem Overlay bei offenen Einstellungen (60 / 120 / 250 m).
-  - **Automatisch aus- und eingeblendet:** Es ist nur sichtbar, wenn Aion 2 das aktive Fenster ist. Ist der
-    Mauszeiger sichtbar (Menüs, UI-Modus), blendet es sich ebenfalls aus, auch wenn der Zeiger an seiner Stelle
-    steht. So verdeckt es kein Menü. Ausnahme: Hältst du `Alt` (Aion 2 zeigt dann den Zeiger), bleibt es sichtbar,
-    bis du loslässt.
-    - Ob `Alt` gedrückt ist, sieht es nur mit Admin-Rechten: Aion 2 läuft selbst mit ihnen, und Windows verbirgt
-      die Tasten dann vor Programmen ohne. Deshalb startet sich das Overlay einmal mit Admin-Rechten neu (UAC-Abfrage).
-      Lehnst du ab, läuft es ohne weiter, und `Alt` blendet es wie ein Menü aus. Browser und Explorer öffnet es
-      trotzdem ohne Admin-Rechte.
-    - Gelesen wird dafür nur der Windows-Fenster-, Mauszeiger- und Tastenstatus, nichts aus dem Spiel.
-    - Ohne laufendes Spiel (Replay) ist es immer sichtbar.
-    - Das Ausblenden in Menüs schaltest du in `data\settings.json` mit `"OverlayHideInMenus": false` ab, nur den
-      Neustart mit Admin-Rechten mit `"OverlayAdminRights": false` (beides auch in den Einstellungen).
-  - `Strg+Umschalt+F10` schaltet es ganz ab und wieder an.
-  - Das Spiel muss im Fenster- oder randlosen Vollbildmodus laufen; über exklusivem Vollbild kann nichts zeichnen.
-  - Abschalten mit `--no-overlay`.
-- **Nordrichtung:** Die Konfiguration nimmt Welt −Y an (unbestätigt). Stimmt die Richtung nicht mit der Minimap
-  überein, stellst du sie oben bei „Norden“ um. Die Auswahl gilt auch für das Overlay und wird in
-  `data\settings.json` gespeichert.
-- **Aufzeichnung:** Jede Sitzung schreibt `captures\radar_<datum_zeit>\raw.pcapng` und `markers.jsonl`. Die Hotkeys
-  aus dem nächsten Abschnitt funktionieren auch hier.
-- **Datenbank:** Jede Sichtung landet in `data\radar.db`. Export über die Links „CSV“ und „JSON“ in der Liste.
-- **Selbstcheck:** Bleiben erwartete Pakete aus (etwa nach einem Patch), erscheint ein roter Hinweis. Die Opcodes
-  stehen in `config\radar.json`.
-- **Andere Zonen:** Wird ein Objekt mit dem Cube-Key geöffnet oder steht es exakt auf einem bekannten Spot, lernt das
-  Radar dessen Template als Cube-Template.
+The full view opens `http://127.0.0.1:5313` in the browser.
+- **Radar** shows the area around you (north up, rings, view range ≈ 100 m as a dashed circle).
+- **Height:** ▲ = cube above you, ▼ = below you, ■ = the same height (± 3 m). The height strip on the right of the
+  radar uses your height as the centre line. The list says “▲ 38 m above you” and so on. If your position is older
+  than 5 s, its age is shown with it.
+- **Map** shows every cube, your trail and, when they exist, the possible spots of the zone.
+- **List:** distance, compass direction, height difference, “seen ago”, “exists for” and status. The statuses are:
+  visible, out of view (probably still there), being opened, opened (by you or by player N), gone.
+- **“Sound on” and “Notifications on”** in the browser play a sound or raise a desktop notification for every new
+  cube. The console beeps as well (turn that off with `--no-beep`).
+- **Your own position** arrives only on events, for example when you cast a buff or when you are attacked. The
+  header shows how old it is. Without a fresh position the radar shows an estimate with an uncertainty circle.
+- **Mini-radar over the game (overlay):** a small window stays in front and never takes focus from the game.
+  - Contents: north up, you in the centre, rings, view range (~100 m) dashed, and your recent trail. The trail
+    shows where you came from, because the game does not send the direction you are facing.
+  - Cubes appear as ▲/▼/■ (above, below, or at your height) with “86 m ▲38”. A cube outside the zoom is a »
+    pointer on the rim, pointing toward it.
+  - The header shows how old your position is, and the zoom.
+  - **Move it:** `Ctrl+Shift+F11` opens Settings. While they are open the overlay stays visible and can be dragged
+    with the mouse. The position is saved when you release it.
+  - **Zoom:** `Ctrl+Shift+F12`, or the mouse wheel over the overlay while Settings are open (60 / 120 / 250 m).
+  - **Shown and hidden on its own:** it is visible only while Aion 2 is the active window. While the mouse cursor
+    is visible (menus, UI mode) it hides as well, even if the cursor stays where it is, so it never covers a menu.
+    Exception: while you hold `Alt` (Aion 2 then shows the cursor) it stays visible until you let go.
+    - It can see that `Alt` is held only with administrator rights. Aion 2 itself runs with them, and Windows then
+      hides key state from programs that do not. So the overlay restarts itself once with administrator rights
+      (a UAC prompt). If you decline, it keeps running without them, and `Alt` hides it the way a menu does. It
+      still opens the browser and Explorer without administrator rights.
+    - For this it reads only the Windows window, cursor and key state, nothing from the game.
+    - With no game running (replay) it is always visible.
+    - Turn off hiding in menus with `"OverlayHideInMenus": false` in `data\settings.json`, and turn off the
+      administrator restart with `"OverlayAdminRights": false` (both are also in Settings).
+  - `Ctrl+Shift+F10` turns it fully off and back on.
+  - The game has to run windowed or borderless fullscreen. Nothing can draw over exclusive fullscreen.
+  - Turn it off with `--no-overlay`.
+- **North:** the configuration assumes world −Y (not confirmed). If the direction does not match the minimap,
+  change it at the top under “North”. The choice also applies to the overlay and is saved in `data\settings.json`.
+- **Recording:** every session writes `captures\radar_<date_time>\raw.pcapng` and `markers.jsonl`. The hotkeys in
+  the next section work here too.
+- **Database:** every sighting goes into `data\radar.db`. Export through the “CSV” and “JSON” links in the list.
+- **Self-check:** if expected packets stop arriving (for example after a patch), a red notice appears. The opcodes
+  are in `config\radar.json`.
+- **Other zones:** when an object is opened with the cube key, or when it stands exactly on a known spot, the radar
+  learns that template as a cube template.
 
-Replay zum Testen: `.\cuberadar.cmd radar --replay captures\<sitzung>\raw.pcapng --speed 5`. Mit `--stop-at 200`
-hält der Replay bei Sekunde 200 des Mitschnitts an.
+Replay for testing: `.\cuberadar.cmd radar --replay captures\<session>\raw.pcapng --speed 5`. With `--stop-at 200`
+the replay pauses at second 200 of the recording.
 
-### Gegner-Fraktion und PvP-/Abyss-Ränge (Testversion)
+### Enemy faction and PvP/Abyss ranks (test)
 
-Ab **0.9.0**. Beim Wechsel von einer älteren EXE diese Version einmal manuell aus diesem Repository herunterladen;
-frühere Builds können noch das ursprüngliche Repository auf Updates prüfen. Ab 0.9.0 zeigt die Update-Suche hierher.
+From **0.9.0**. When moving from an older exe, download this version once by hand from this repository. Earlier
+builds may still check the original repository for updates. From 0.9.0 the update check points here.
 
-Für Elyos: `.\cuberadar.cmd radar --overlay-only --faction Elyos`.
-Die Wahl wird gespeichert; wechseln kannst du unter **⚙ → Gegner → Eigene Fraktion** oder in der Web-Ansicht
-bei **„Ich spiele“**. „Automatisch“ benötigt ein eigenes Charakterpaket, das bei Start mitten in einer Sitzung
-noch fehlen kann. Für Asmodier `--faction Asmodian` verwenden.
+For Elyos: `.\cuberadar.cmd radar --overlay-only --faction Elyos`.
+The choice is saved. Change it under **⚙ → Enemies → Own faction**, or in the web view under **“I play”**.
+“Automatic” needs your own character packet, which can still be missing when the radar is started in the middle of
+a session. For Asmodians use `--faction Asmodian`.
 
-- Nur Spieler der sicher erkannten Gegenfraktion erscheinen als Gegner, keine geratenen Entity-/Server-Zuordnungen.
-- Rote Rauten zeigen frische Positionen; darunter stehen die nächsten drei Gegner mit Fraktion und Rang.
-- Ab **0.9.1** steht die Soldatenklasse **1–9 direkt in der Raute**, **T** für Trainee und **?** für unbekannt.
-  Name und Entfernung stehen daneben; die Liste behält den ausgeschriebenen Rang und das Annahme-Sternchen.
-- 19 = Trainee, 17 = Eighth-Class Soldier, 16 = Seventh-Class Soldier, 15 = Sixth-Class Soldier und
-  14 = Fifth-Class Soldier sind per Screenshot beobachtet. Die übrige Zählweise
-  (18 = Ninth-Class Soldier … 10 = First-Class Soldier; kleinere Codes = höherer Rang) ist eine **Annahme** (`*`).
-- Unbekannte Paketvarianten zeigen **„Rang unbekannt“**. Es werden keine Web-Profile abgefragt.
-- Positionsdaten können verzögert eintreffen. Nach 10 s ohne Positionsupdate verschwindet der Live-Punkt;
-  die Liste kennzeichnet alte Positionen. Entfernte/getötete Gegner und Kontakte vor Teleports werden verworfen.
-- Ist die eigene Position alt oder geschätzt, sind auch Richtungen/Entfernungen unsicher; die Entfernung trägt `~`/`≈`.
-- Unter ⚙ lässt sich die zusätzliche Gegneranzeige abschalten; die Cube-Funktion bleibt erhalten.
+- Only players of the confidently recognised opposing faction appear as enemies. There is no guessing from entity
+  or server ids.
+- Red diamonds show fresh positions. Below them are the three nearest enemies, with faction and rank.
+- From **0.9.1** the soldier class **1–9 is drawn inside the diamond**, **T** means Trainee and **?** means unknown.
+  Name and distance sit beside it. The list keeps the full rank and the assumption star.
+- 19 = Trainee, 17 = Eighth-Class Soldier, 16 = Seventh-Class Soldier, 15 = Sixth-Class Soldier and
+  14 = Fifth-Class Soldier were seen on screenshots. The rest of the count
+  (18 = Ninth-Class Soldier … 10 = First-Class Soldier; a smaller code is a higher rank) is an **assumption** (`*`).
+- Unknown packet variants show **“rank unknown”**. No web profiles are queried.
+- Position data can arrive late. After 10 s without a position update the live point disappears. The list marks old
+  positions. Enemies who left or were killed, and contacts from before a teleport, are dropped.
+- If your own position is old or estimated, directions and distances are uncertain too. The distance then carries
+  `~`/`≈`.
+- Under ⚙ the extra enemy display can be turned off. Cube tracking stays.
 
-Rangzuordnung, sofern der Code aus einer unterstützten Paketvariante gelesen werden kann:
+Rank mapping, when the code can be read from a supported packet variant:
 
-| Code | PvP-/Abyss-Rang | Im Symbol |
+| Code | PvP/Abyss rank | In the marker |
 |---:|---|:---:|
 | 19 | Trainee | T |
 | 18 | Ninth-Class Soldier * | 9 |
@@ -208,57 +201,58 @@ Rangzuordnung, sofern der Code aus einer unterstützten Paketvariante gelesen we
 | 11 | Second-Class Soldier * | 2 |
 | 10 | First-Class Soldier * | 1 |
 
-`*` = aus der freigegebenen Zählfolge abgeleitet, noch nicht separat fotografisch bestätigt.
+`*` = taken from the published counting order, not yet confirmed on its own screenshot.
 
-## Aufnehmen
+## Capture
 
 ```powershell
-.\cuberadar.cmd dump live              # bis "q" + Enter oder Strg+C
+.\cuberadar.cmd dump live              # until "q" + Enter, or Ctrl+C
 .\cuberadar.cmd dump live --seconds 120
 ```
 
-Jede Aufnahme landet in `captures\<datum_zeit>\`:
-- `raw.pcapng`: rohe Pakete für Replays und Wireshark
-- `frames.jsonl`: jeder dekodierte Frame
-- `markers.jsonl`: die gesetzten Marker
-- `census.json` und `census.txt`: Opcode-Census und Stream-Gesundheit
+Each recording lands in `captures\<date_time>\`:
+- `raw.pcapng`: raw packets for replays and Wireshark
+- `frames.jsonl`: every decoded frame
+- `markers.jsonl`: the markers you set
+- `census.json` and `census.txt`: opcode census and stream health
 
-**Marker** (Bestätigungston pro Taste):
+**Markers** (a confirmation sound per key):
 
-| Hotkey (global, auch im Spiel) | Marker |
+| Hotkey (global, works in game too) | Marker |
 |---|---|
-| Strg+Umschalt+F5 | `cube_visible` (Cube sichtbar) |
-| Strg+Umschalt+F6 | `cube_opened` (Cube geöffnet) |
-| Strg+Umschalt+F7 | `cube_out_of_sight` (Cube außer Sicht) |
-| Strg+Umschalt+F8 | `cube_back` (wieder in Sicht/zurück) |
-| Strg+Umschalt+F9 | `note` (allgemeiner Marker) |
+| Ctrl+Shift+F5 | `cube_visible` (cube visible) |
+| Ctrl+Shift+F6 | `cube_opened` (cube opened) |
+| Ctrl+Shift+F7 | `cube_out_of_sight` (cube out of sight) |
+| Ctrl+Shift+F8 | `cube_back` (back in sight) |
+| Ctrl+Shift+F9 | `note` (general marker) |
 
-In der Konsole setzt Enter einen Marker, optional mit Text. `1`–`5` entsprechen den Hotkeys, `q` beendet die Aufnahme.
-Andere Tasten belegst du mit `--hotkeys "ctrl+alt+F1=cube_visible,…"`.
+In the console, Enter sets a marker, optionally with text. `1`–`5` match the hotkeys, `q` ends the recording.
+Bind other keys with `--hotkeys "ctrl+alt+F1=cube_visible,…"`.
 
-## Auswerten
+## Analyse
 
 ```powershell
-.\cuberadar.cmd dump captures\<sitzung>\raw.pcapng     # Replay -> raw.replay.jsonl (+ markers.jsonl wird eingemischt)
-.\cuberadar.cmd census captures\<sitzung>\raw.pcapng
-python tools\census.py captures\<sitzung>\frames.jsonl
-python tools\crosscheck.py captures\<sitzung>\raw.pcapng captures\<sitzung>\frames.jsonl
+.\cuberadar.cmd dump captures\<session>\raw.pcapng     # replay -> raw.replay.jsonl (+ markers.jsonl is mixed in)
+.\cuberadar.cmd census captures\<session>\raw.pcapng
+python tools\census.py captures\<session>\frames.jsonl
+python tools\crosscheck.py captures\<session>\raw.pcapng captures\<session>\frames.jsonl
 ```
 
 ### frames.jsonl
 
-Pro Zeile ein JSON-Objekt. `t` ist Unix-ms, bei Paketen die Capture-Uhr, bei Markern die Wanduhr.
+One JSON object per line. `t` is Unix milliseconds: the capture clock for packets, the wall clock for markers.
 
-- `frame`: `n` (laufende Nummer), `t`, `flow`, `src` (`top` | `lz4` | `emb`), `depth`, `path`, `op` (Wire-Bytes als
-  Hex), `name`, `len` (Body), `wire` (Frame inkl. Varint), `flag` (optional) und `hex` (Body ohne Opcode).
-  - `path` beschreibt die Verschachtelung: `B3.0/B4.2` ist der dritte Frame in Bundle 4, und Bundle 4 ist selbst der
-    erste Frame von Bundle 3. `E7.0` steht für ein Bundle, das im Body eines anderen Pakets eingebettet war.
+- `frame`: `n` (running number), `t`, `flow`, `src` (`top` | `lz4` | `emb`), `depth`, `path`, `op` (wire bytes as
+  hex), `name`, `len` (body), `wire` (frame including the varint), `flag` (optional) and `hex` (body without the
+  opcode).
+  - `path` describes the nesting: `B3.0/B4.2` is the third frame in bundle 4, and bundle 4 is itself the first
+    frame of bundle 3. `E7.0` is a bundle that was embedded in the body of another packet.
 - `bundle`: `id`, `src`, `depth`, `path`, `host`, `raw`, `zlen`, `out`, `ok`
 - `marker`: `t`, `local`, `label`, `text`, `via`
-- außerdem `session`, `flow`, `gap`, `stats`
+- also `session`, `flow`, `gap`, `stats`
 
-## Lizenz
+## License
 
-GPL-3.0 (siehe `LICENSE`), weil Teile von cyberbadger6969/aion2-dps-meter übernommen sind. Abgeleitete Dateien sind im
-Kopfkommentar gekennzeichnet. Das Projekt ist nur für den privaten Gebrauch gedacht. Die Nutzung verstößt
-möglicherweise gegen die AGB von NCSOFT, das Risiko trägt der Nutzer.
+GPL-3.0 (see `LICENSE`), because parts are taken from cyberbadger6969/aion2-dps-meter. Derived files are marked in
+their header comment. The project is meant for private use only. Using it may violate NCSOFT's terms of service;
+the risk is yours.

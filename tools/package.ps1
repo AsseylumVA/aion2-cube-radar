@@ -52,7 +52,7 @@ Remove-Item $publish -Recurse -Force
 
 # Corresponding source (GPL-3.0): the committed code, without personal data.
 git -C $root archive --format=zip -o (Join-Path $stage "source.zip") HEAD -- `
-    src tools config assets LICENSE README.md CubeRadar.slnx cuberadar.cmd overlay.cmd .gitignore
+    src tools config assets LICENSE README.md README.ru.md CubeRadar.slnx cuberadar.cmd overlay.cmd .gitignore
 if ($LASTEXITCODE -ne 0) { throw "git archive failed" }
 
 $zip = Join-Path $dist "$name.zip"
