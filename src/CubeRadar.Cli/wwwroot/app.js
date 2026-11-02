@@ -34,7 +34,7 @@ const STATUS_KEY = {
   Gone: "status.gone",
 };
 const COLORS = {};
-for (const k of ["visible", "out", "opening", "gone", "me", "spot", "hist", "text", "muted", "line", "enemy"])
+for (const k of ["visible", "out", "opening", "gone", "me", "spot", "hist", "text", "muted", "line", "enemy", "kibelisk"])
   COLORS[k] = getComputedStyle(document.documentElement).getPropertyValue("--" + k).trim();
 
 const ui = {
@@ -181,9 +181,15 @@ function mapNudgeDelta(map, player, at) {
 
 /** Possible respawns in packet centimeters. Present whether or not a cube is there now. */
 let SPAWNS = {};
+/** Kibelisks (teleports) in packet centimeters: [x, y, name]. Alignment clicks only these. */
+let KIBELISKS = {};
 
 function zoneSpawns(id) {
   return (id && SPAWNS[id]) || [];
+}
+
+function zoneKibelisks(id) {
+  return (id && KIBELISKS[id]) || [];
 }
 
 /** Background wins until a zone packet arrives; after that the packet wins in auto mode. */
@@ -200,18 +206,6 @@ function currentZoneId() {
 /** Marker pixel on the zone image back into world centimeters, using the current fit. */
 function spawnWorld(map, px, py) {
   return { x: (px - map.offsetX) / map.scale, y: (py - map.offsetY) / map.scale };
-}
-
-function frameAround(points, w, h) {
-  const o = orientation();
-  const ns = points.map((p) => p.x * o.nx + p.y * o.ny);
-  const es = points.map((p) => p.x * o.ex + p.y * o.ey);
-  const pad = 6000;
-  const nMin = Math.min(...ns) - pad, nMax = Math.max(...ns) + pad;
-  const eMin = Math.min(...es) - pad, eMax = Math.max(...es) + pad;
-  const scale = Math.min((w - 80) / Math.max(1, eMax - eMin), (h - 80) / Math.max(1, nMax - nMin));
-  const cn = (nMin + nMax) / 2, ce = (eMin + eMax) / 2;
-  return { scale, center: { x: cn * o.nx + ce * o.ex, y: cn * o.ny + ce * o.ey } };
 }
 
 function currentMap() {
@@ -591,22 +585,11 @@ function draw() {
   }
   const zoneId = currentZoneId();
   const respawns = zoneSpawns(zoneId);
-  if (ui.align && ui.mode === "radar" && m && respawns.length && center) {
-    let best = Infinity, near = null;
-    for (const [x, y] of respawns) {
-      const d = Math.hypot(x - m.x, y - m.y);
-      if (d < best) { best = d; near = { x, y }; }
-    }
-    if (near && best > ui.range * 100) {
-      const fitted = frameAround([m, near], w, h);
-      if (Number.isFinite(fitted.scale) && fitted.scale > 0) ({ center, scale } = fitted);
-    }
-  }
   const toScreen = (p) => {
     const q = rel(p, center);
     return [w / 2 + q.e * scale, h / 2 - q.n * scale];
   };
-  frame = { center, scale, w, h, spawns: [] };
+  frame = { center, scale, w, h, spawns: [], kibelisks: [] };
 
   drawZoneMap(zoneMap, toScreen, w, h);
 
@@ -741,6 +724,24 @@ function draw() {
     if (rp) drawText(x + 11, y - 8, `${fmtNum(rp.dist / 100)} m${hs ? " · " + hs : ""}`, color);
   }
 
+  // Kibelisks stay put after a cube is collected, so alignment clicks them and nothing else.
+  const kibelisks = zoneKibelisks(zoneId);
+  if (kibelisks.length) {
+    const visible = [];
+    for (const [x, y, name, icon] of kibelisks) {
+      const [sx, sy] = toScreen({ x, y });
+      if (sx < -24 || sx > w + 24 || sy < -24 || sy > h + 24) continue;
+      visible.push({ x, y, name, icon, sx, sy, dist: m ? Math.hypot(x - m.x, y - m.y) : 0 });
+    }
+    const labelAll = ui.align && visible.length <= 8;
+    for (const s of visible) {
+      drawKibelisk(s.sx, s.sy, s.icon, s.dist < 400);
+      if (s.name && (labelAll || (ui.align && s.dist < 30000)))
+        drawText(s.sx + 14, s.sy - 4, s.name, COLORS.kibelisk || "#5ee0c5");
+    }
+    frame.kibelisks = visible.map((s) => ({ sx: s.sx, sy: s.sy, world: { x: s.x, y: s.y }, name: s.name }));
+  }
+
   const enemyLabels = [];
   const enemyMarkers = [];
   for (const p of positionedEnemies) {
@@ -762,6 +763,27 @@ function draw() {
 }
 
 let spawnIcon = null;
+
+const kibeliskIcons = {};
+
+function kibeliskIcon(file) {
+  if (!file || typeof Image !== "function") return null;
+  let img = kibeliskIcons[file];
+  if (!img) {
+    img = new Image();
+    kibeliskIcons[file] = img;
+    img.onload = () => { if (msg) draw(); };
+    img.src = "maps/icons/" + file;
+  }
+  return img.complete && img.naturalWidth ? img : null;
+}
+
+function drawKibelisk(x, y, file, here) {
+  const img = kibeliskIcon(file);
+  if (!img) return;
+  const s = here ? 28 : 22;
+  ctx.drawImage(img, x - s / 2, y - s / 2, s, s);
+}
 
 function drawSpawn(x, y, here) {
   const s = here ? 16 : 12;
@@ -917,6 +939,11 @@ function syncControls() {
   align.textContent = ui.align ? t("web.alignOn") : t("web.align");
   align.classList.toggle("on", ui.align);
   document.getElementById("canvas").classList.toggle("align", ui.align);
+  const help = document.getElementById("align-help");
+  if (help) {
+    help.hidden = !ui.align;
+    help.textContent = t("web.alignHelp");
+  }
   const reset = document.getElementById("align-reset");
   reset.textContent = t("web.alignReset");
   const shown = currentMap();
@@ -995,14 +1022,14 @@ document.getElementById("canvas").addEventListener("click", (e) => {
   const map = currentMap();
   const player = me();
   if (!map || !player || !frame || e.offsetX > frame.w || e.offsetY > frame.h) return;
-  const marks = frame.spawns || [];
-  let hit = null, best = 16;
+  const marks = frame.kibelisks || [];
+  let hit = null, best = 22;
   for (const s of marks) {
     const d = Math.hypot(s.sx - e.offsetX, s.sy - e.offsetY);
     if (d <= best) { best = d; hit = s; }
   }
-  const at = hit ? hit.world : (marks.length ? null : worldAt(e.offsetX, e.offsetY));
-  if (!at) return;
+  if (!hit) return;
+  const at = hit.world;
   rememberNudge(map.id, mapNudgeDelta(map, player, at));
   ui.align = false;
   syncControls();
@@ -1108,6 +1135,19 @@ function loadMapCatalog() {
   } catch { /* tests, or the page is not served over HTTP */ }
 }
 
+function loadKibelisks() {
+  if (typeof XMLHttpRequest === "undefined") return;
+  try {
+    const xhr = new XMLHttpRequest();
+    xhr.open("GET", "maps/kibelisks.json", false);
+    xhr.send();
+    if (xhr.status && xhr.status !== 200) return;
+    KIBELISKS = JSON.parse(xhr.responseText).zones || {};
+    for (const list of Object.values(KIBELISKS))
+      for (const row of list) kibeliskIcon(row[3]);
+  } catch { /* tests, or the page is not served over HTTP */ }
+}
+
 function loadSpawns() {
   if (typeof XMLHttpRequest === "undefined") return;
   try {
@@ -1122,6 +1162,7 @@ function loadSpawns() {
 applyStatic();
 loadMapCatalog();
 loadSpawns();
+loadKibelisks();
 loadSpawnIcon();
 publishNudges();
 connect();

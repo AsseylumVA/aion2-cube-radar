@@ -149,6 +149,23 @@ test('a spawn pixel stays on that image point when converted to world centimeter
   assert.ok(Math.abs(px - 4730) < 1e-6 && Math.abs(py - 5126) < 1e-6);
 });
 
+test('kibelisks are the only alignment landmarks, in both starter zones', () => {
+  const data = JSON.parse(fs.readFileSync(path.join(__dirname, '../src/CubeRadar.Cli/wwwroot/maps/kibelisks.json'), 'utf8'));
+  assert.equal(data.zones.verteron.length, 62);
+  assert.equal(data.zones.altgard.length, 62);
+  for (const zone of [data.zones.verteron, data.zones.altgard]) {
+    for (const row of zone) {
+      assert.equal(row.length, 4);
+      assert.equal(typeof row[0], 'number');
+      assert.equal(typeof row[1], 'number');
+      assert.equal(typeof row[2], 'string');
+      assert.ok(row[2].length > 0);
+      assert.ok(row[3].endsWith('.webp'));
+      assert.ok(fs.existsSync(path.join(__dirname, '../src/CubeRadar.Cli/wwwroot/maps/icons', row[3])));
+    }
+  }
+});
+
 test('every published respawn is listed, including the collected Verteron cube', () => {
   const data = JSON.parse(fs.readFileSync(path.join(__dirname, '../src/CubeRadar.Cli/wwwroot/maps/spawns.json'), 'utf8'));
   assert.equal(data.zones.verteron.length, 1440);

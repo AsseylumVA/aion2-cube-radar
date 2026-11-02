@@ -14,6 +14,7 @@
   --hist: #9b7cf0;
   --warn: #ff6b5b;
   --enemy: #ff6b5b;
+  --kibelisk: #5ee0c5;
   --up: #7cc4ff;
   --down: #ff9f6b;
   --ok: #3ddc84;
@@ -115,6 +116,17 @@ canvas {
   touch-action: none;
 }
 canvas.align { cursor: crosshair; }
+#align-help {
+  margin: 0 0 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--kibelisk);
+  border-radius: 8px;
+  background: #10241f;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.45;
+}
+#align-help[hidden] { display: none; }
 canvas.panning { cursor: grabbing; }
 
 .legend { display: flex; gap: 14px; flex-wrap: wrap; color: var(--muted); font-size: 12px; }
@@ -133,6 +145,7 @@ canvas.panning { cursor: grabbing; }
 .enemy-card .enemy-meta, .rank-note { color: var(--muted); font-size: 12px; }
 .rank-note { padding: 0 14px; margin: 0 0 8px; }
 .sw.spot { width: 14px; height: 14px; background: url("maps/hidden-cube.webp") center / contain no-repeat; border: none; border-radius: 0; }
+.sw.kibelisk { width: 16px; height: 16px; background: url("maps/icons/kibelisk-elyos.webp") center / contain no-repeat; border-radius: 0; }
 .sw.hist { background: var(--hist); border-radius: 50%; opacity: .7; }
 .tri { font-style: normal; font-size: 11px; margin-right: 4px; color: var(--visible); }
 

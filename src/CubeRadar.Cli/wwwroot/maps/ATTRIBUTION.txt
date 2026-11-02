@@ -19,5 +19,10 @@ spawns.json lists every possible Hidden Cube spot (Verteron 1440, Altgard 1371)
 in packet centimeters. Source: https://mmorpg-aion2.ru/interactive-map/
 A spot is drawn even after the cube has been collected.
 
+kibelisks.json lists the "Телепорты и кибелиски" points from the same map
+(Verteron 62, Altgard 62), also in packet centimeters. Map alignment clicks
+only these points. Their icons are the map's own marker images:
+maps/icons/kibelisk-elyos.webp, kibelisk-asmodian.webp and abyss-portal.webp.
+
 hidden-cube.webp is the Hidden Cube icon from the same interactive map
 (public/images/HiddenCube.webp), CC BY-NC 4.0.
