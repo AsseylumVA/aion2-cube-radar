@@ -156,6 +156,47 @@ test('every published respawn is listed, including the collected Verteron cube',
   assert.ok(data.zones.verteron.some(([x, y]) => Math.hypot(x - 70962, y - 99276) < 2));
 });
 
+test('dragging the map frees it, and three position packets after a move bring it back', () => {
+  const b = browser();
+  b.update([]);
+  const before = b.context.mapFrame().center.x;
+  b.context.panTo({ x: before, y: b.context.mapFrame().center.y }, 80, 0);
+  const v = b.context.mapView();
+  assert.equal(v.follow, false);
+  assert.ok(Math.abs(v.center.x - before) > 1);
+  const step = (ms, x) => b.context.notePosition({ x, y: 10000, z: 100, timeMs: ms, ageMs: 0 });
+  step(11000, 10000);
+  assert.equal(v.moves, 0);
+  step(12000, 10300);
+  assert.equal(v.moves, 1);
+  step(13000, 10600);
+  step(14000, 10900);
+  assert.ok(v.returning);
+  assert.equal(v.returning.from.x, v.center.x);
+});
+
+test('a moved position counts even when the packet time does not change', () => {
+  const b = browser();
+  b.update([]);
+  const before = b.context.mapFrame().center.x;
+  b.context.panTo({ x: before, y: b.context.mapFrame().center.y }, 80, 0);
+  b.context.notePosition({ x: 10300, y: 10000, timeMs: 10000 });
+  assert.equal(b.context.mapView().moves, 1);
+  b.context.notePosition({ x: 10600, y: 10000, timeMs: 10000 });
+  b.context.notePosition({ x: 10900, y: 10000, timeMs: 10000 });
+  assert.ok(b.context.mapView().returning);
+});
+
+test('wheel zoom stays bounded and does not free a following map', () => {
+  const b = browser();
+  b.update([]);
+  b.context.zoomView(2, 100, 100);
+  assert.equal(b.context.mapView().zoom, 2);
+  assert.equal(b.context.mapView().follow, true);
+  b.context.zoomView(100, 100, 100);
+  assert.equal(b.context.mapView().zoom, 8);
+});
+
 test('invalid API badge strings fall back to the class mapping', () => {
   const b = browser();
   b.update([contact({ rankSymbol: 'R17' })]);

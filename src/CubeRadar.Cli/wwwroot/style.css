@@ -111,8 +111,11 @@ canvas {
   background: radial-gradient(circle at 50% 50%, #141a20 0%, #0c0f13 75%);
   border: 1px solid var(--line);
   border-radius: 10px;
+  cursor: grab;
+  touch-action: none;
 }
 canvas.align { cursor: crosshair; }
+canvas.panning { cursor: grabbing; }
 
 .legend { display: flex; gap: 14px; flex-wrap: wrap; color: var(--muted); font-size: 12px; }
 .sw { display: inline-block; width: 10px; height: 10px; margin-right: 5px; vertical-align: -1px; border-radius: 2px; }

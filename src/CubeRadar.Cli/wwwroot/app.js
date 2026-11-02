@@ -97,6 +97,7 @@ function onState() {
   renderHeader();
   renderList(fresh);
   renderEnemies();
+  notePosition(ownSample());
   draw();
 }
 
@@ -412,6 +413,140 @@ document.getElementById("list").addEventListener("click", (e) => {
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 
+// Free look, like a GPS: the map follows the player until it is dragged. After the character
+// actually moves, three new position packets bring it smoothly back.
+const MOVE_CM = 100;
+const RETURN_PACKETS = 3;
+const RETURN_MS = 700;
+let view = {
+  zoom: 1, follow: true, center: null, returning: null,
+  anchor: null, moves: 0, fixMs: null, fixX: null, fixY: null, ticking: false, suppressClick: false,
+};
+
+function mapView() { return view; }
+function mapFrame() { return frame; }
+
+function clampZoom(z) { return Math.min(8, Math.max(0.04, z)); }
+
+function followScale(w, h) {
+  return (Math.min(w, h) / 2 - 24) / (ui.range * 100) * view.zoom;
+}
+
+function playerAnchor() {
+  const fix = msg && msg.radar && msg.radar.self;
+  if (fix) return { x: fix.x, y: fix.y };
+  const p = me();
+  return p ? { x: p.x, y: p.y } : null;
+}
+
+function detachView() {
+  if (view.follow && frame && frame.scale) {
+    const nominal = (Math.min(frame.w, frame.h) / 2 - 24) / (ui.range * 100);
+    if (nominal > 0) view.zoom = clampZoom(frame.scale / nominal);
+  }
+  view.follow = false;
+  view.returning = null;
+  view.moves = 0;
+  view.anchor = playerAnchor();
+  if (view.anchor) { view.fixX = view.anchor.x; view.fixY = view.anchor.y; }
+}
+
+function ownSample() {
+  const radar = msg && msg.radar;
+  if (!radar) return null;
+  const fix = radar.self, ring = radar.ring;
+  if (ring && (!fix || ring.timeMs > fix.timeMs)) return { x: ring.x, y: ring.y, timeMs: ring.timeMs };
+  if (fix) return { x: fix.x, y: fix.y, timeMs: fix.timeMs };
+  return null;
+}
+
+/** Shift the looked-at world point. dx/dy are pixels since the drag started, from `origin`. */
+function panTo(origin, dx, dy) {
+  if (!frame || !frame.scale || !origin) return;
+  if (view.follow || view.returning) detachView();
+  const o = orientation();
+  const de = -dx / frame.scale, dn = dy / frame.scale;
+  view.center = {
+    x: origin.x + de * o.ex + dn * o.nx,
+    y: origin.y + de * o.ey + dn * o.ny,
+  };
+}
+
+/** Wheel zoom. While following, the player stays in the centre; while looking around, the point under the cursor stays. */
+function zoomView(factor, sx, sy) {
+  const next = clampZoom(view.zoom * factor);
+  if (!frame || !frame.scale || next === view.zoom || view.follow || sx == null) {
+    view.zoom = next;
+    return next;
+  }
+  const before = worldAt(sx, sy);
+  const ratio = next / view.zoom;
+  view.zoom = next;
+  if (!before) return next;
+  const e = (sx - frame.w / 2) / (frame.scale * ratio);
+  const n = (frame.h / 2 - sy) / (frame.scale * ratio);
+  const o = orientation();
+  view.center = {
+    x: before.x - (n * o.nx + e * o.ex),
+    y: before.y - (n * o.ny + e * o.ey),
+  };
+  return next;
+}
+
+function notePosition(fix) {
+  if (!fix || fix.x == null || fix.y == null) return;
+  const step = view.fixX == null ? 0 : Math.hypot(fix.x - view.fixX, fix.y - view.fixY);
+  const sameTime = fix.timeMs != null && view.fixMs === fix.timeMs;
+  // A repeated timestamp still counts when the coordinates moved: walking updates the point
+  // even if the packet clock on that sample does not.
+  if ((sameTime || fix.timeMs == null) && step < MOVE_CM && view.fixX != null) return;
+  if (fix.timeMs != null) view.fixMs = fix.timeMs;
+  view.fixX = fix.x;
+  view.fixY = fix.y;
+  if (view.follow || view.returning || !view.anchor) return;
+  if (step < MOVE_CM) return;
+  view.moves += 1;
+  if (view.moves >= RETURN_PACKETS) beginReturn();
+}
+
+function beginReturn() {
+  const from = !view.follow && view.center ? view.center : frame && frame.center;
+  view.moves = 0;
+  if (!from) {
+    view.follow = true;
+    view.center = null;
+    view.anchor = null;
+    return;
+  }
+  view.returning = { from: { x: from.x, y: from.y }, t0: Date.now() };
+}
+
+function easedCenter(player) {
+  if (!view.returning || !player) return null;
+  const t = Math.min(1, (Date.now() - view.returning.t0) / RETURN_MS);
+  const k = 1 - (1 - t) * (1 - t) * (1 - t);
+  const center = {
+    x: view.returning.from.x + (player.x - view.returning.from.x) * k,
+    y: view.returning.from.y + (player.y - view.returning.from.y) * k,
+  };
+  if (t >= 1) {
+    view.follow = true;
+    view.returning = null;
+    view.center = null;
+    view.anchor = null;
+  }
+  return center;
+}
+
+function scheduleMapReturn() {
+  if (view.ticking || typeof requestAnimationFrame !== "function") return;
+  view.ticking = true;
+  requestAnimationFrame(() => {
+    view.ticking = false;
+    if (view.returning && msg) draw();
+  });
+}
+
 function draw() {
   if (!msg) return;
   const dpr = window.devicePixelRatio || 1;
@@ -431,10 +566,16 @@ function draw() {
   w -= STRIP; // the height strip takes the right edge
   let center, scale;
   const positionedEnemies = enemies().filter((p) => p.x != null && p.y != null && !p.positionStale);
-  if (ui.mode === "radar" && (m || r.cubes.length || positionedEnemies.length)) {
-    center = m || avg([...r.cubes, ...positionedEnemies]);
-    scale = (Math.min(w, h) / 2 - 24) / (ui.range * 100);
-  } else {
+  if (m && view.returning) {
+    center = easedCenter(m);
+    if (view.returning) scheduleMapReturn();
+  }
+  if (!center && !view.follow && view.center) center = view.center;
+  if (!center && m) center = { x: m.x, y: m.y };
+  if (!center && ui.mode === "radar" && (r.cubes.length || positionedEnemies.length))
+    center = avg([...r.cubes, ...positionedEnemies]);
+  if (center) scale = followScale(w, h);
+  else {
     const pts = [...r.cubes, ...positionedEnemies, ...r.trail.filter((p) => p.length === 2).map((p) => ({ x: p[0], y: p[1] })), ...(m ? [m] : [])];
     const bounds = zoneMap ? mapBounds(zoneMap) : null;
     const fit = pts.length ? pts : (bounds
@@ -444,7 +585,7 @@ function draw() {
     const ns = fit.map((p) => p.x * o.nx + p.y * o.ny), es = fit.map((p) => p.x * o.ex + p.y * o.ey);
     const pad = 4000;
     const nMin = Math.min(...ns) - pad, nMax = Math.max(...ns) + pad, eMin = Math.min(...es) - pad, eMax = Math.max(...es) + pad;
-    scale = Math.min((w - 40) / (eMax - eMin), (h - 40) / (nMax - nMin));
+    scale = Math.min((w - 40) / (eMax - eMin), (h - 40) / (nMax - nMin)) * view.zoom;
     const cn = (nMin + nMax) / 2, ce = (eMin + eMax) / 2;
     center = { x: cn * o.nx + ce * o.ex, y: cn * o.ny + ce * o.ey };
   }
@@ -469,26 +610,28 @@ function draw() {
 
   drawZoneMap(zoneMap, toScreen, w, h);
 
-  // grid
+  // The cross stays on the character. Panning moves the map under it; it is not glued to the screen centre.
+  const [hx, hy] = m ? toScreen(m) : [w / 2, h / 2];
   ctx.lineWidth = 1;
   if (ui.mode === "radar") {
     const step = niceStep(ui.range / 4);
     ctx.font = "11px Segoe UI, sans-serif";
     for (let d = step; d <= ui.range * 1.5; d += step) {
-      ring(w / 2, h / 2, d * 100 * scale, COLORS.line, []);
-      drawText(w / 2 + 4, h / 2 - d * 100 * scale - 3, `${d} m`, COLORS.muted);
+      if (d === 100) continue; // the 100 m send ring is drawn brighter, on the player
+      ring(hx, hy, d * 100 * scale, COLORS.line, []);
+      drawText(hx + 4, hy - d * 100 * scale - 3, `${d} m`, COLORS.muted);
     }
-    ctx.strokeStyle = COLORS.line;
-    line(w / 2, 8, w / 2, h - 8);
-    line(8, h / 2, w - 8, h / 2);
   }
+  ctx.strokeStyle = COLORS.line;
+  line(hx, 8, hx, h - 8);
+  line(8, hy, w - 8, hy);
   drawText(12, 20, "N ↑", COLORS.text);
   if (!zoneId && ui.basemap === "auto") drawText(w / 2, 36, t("web.spawnNeedMap"), COLORS.text, "center");
   else if (zoneId) drawText(12, 38, t("web.spawnCount", respawns.length), COLORS.text);
   if (ui.align) {
     const hint = !zoneId ? t("web.alignNeedMap") : !m ? t("web.alignNeedPos") : t("web.alignHint");
     drawText(w / 2, 36, hint, COLORS.text, "center");
-  }
+  } else if (!view.follow) drawText(w / 2, h - 18, t("web.viewFree"), COLORS.muted, "center");
 
   // possible spots and history
   for (const s of zoneSpots) dot(toScreen(s), 1.6, COLORS.spot);
@@ -513,7 +656,10 @@ function draw() {
   }
   if (m) {
     const [x, y] = toScreen(m);
-    ring(x, y, SEND_RADIUS * scale, COLORS.me, [6, 6], 0.35);
+    ctx.lineWidth = 2.5;
+    ring(x, y, SEND_RADIUS * scale, COLORS.me, [8, 5], 1);
+    ctx.lineWidth = 1;
+    drawText(x + 6, y - SEND_RADIUS * scale - 3, "100 m", COLORS.me);
     if (m.ring) ring(x, y, Math.max(6, m.ring * scale), COLORS.me, [3, 4], 0.8);
     const stale = m.age > r.fixFreshSeconds * 1000;
     ctx.globalAlpha = stale ? 0.5 : 1;
@@ -758,7 +904,6 @@ function chime() {
 function syncControls() {
   document.querySelectorAll(".seg button").forEach((b) => b.classList.toggle("on", b.dataset.mode === ui.mode));
   document.getElementById("range").value = String(ui.range);
-  document.getElementById("range").disabled = ui.mode !== "radar";
   const s = document.getElementById("sound");
   s.textContent = ui.sound ? t("web.soundOn") : t("web.soundOff");
   s.classList.toggle("on", ui.sound);
@@ -845,6 +990,7 @@ document.getElementById("align-reset").addEventListener("click", () => {
   if (msg) draw();
 });
 document.getElementById("canvas").addEventListener("click", (e) => {
+  if (view.suppressClick) { view.suppressClick = false; return; }
   if (!ui.align || !msg) return;
   const map = currentMap();
   const player = me();
@@ -862,6 +1008,37 @@ document.getElementById("canvas").addEventListener("click", (e) => {
   syncControls();
   draw();
 });
+let drag = null;
+canvas.addEventListener("pointerdown", (e) => {
+  if (ui.align || e.button !== 0 || !frame || e.offsetX > frame.w) return;
+  view.suppressClick = false;
+  drag = { x: e.offsetX, y: e.offsetY, ox: frame.center.x, oy: frame.center.y, moved: false };
+  if (canvas.setPointerCapture) canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener("pointermove", (e) => {
+  if (!drag) return;
+  const dx = e.offsetX - drag.x, dy = e.offsetY - drag.y;
+  if (!drag.moved && Math.hypot(dx, dy) < 4) return;
+  drag.moved = true;
+  canvas.classList.add("panning");
+  panTo({ x: drag.ox, y: drag.oy }, dx, dy);
+  if (msg) draw();
+});
+canvas.addEventListener("pointerup", () => {
+  if (!drag) return;
+  view.suppressClick = drag.moved;
+  drag = null;
+  canvas.classList.remove("panning");
+});
+canvas.addEventListener("pointercancel", () => { drag = null; canvas.classList.remove("panning"); });
+canvas.addEventListener("wheel", (e) => {
+  if (!msg || !frame) return;
+  e.preventDefault();
+  const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+  zoomView(Math.exp(-dy * 0.0015), e.offsetX, e.offsetY);
+  draw();
+}, { passive: false });
+
 document.getElementById("north").addEventListener("change", async (e) => {
   await fetch("/api/north", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ north: e.target.value }) });
   e.target.blur();

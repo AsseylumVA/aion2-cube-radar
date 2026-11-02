@@ -56,9 +56,9 @@ internal sealed class SettingsForm : Form
         ForeColor = Fg;
         Font = new Font("Segoe UI", 9.5f);
         AutoScaleMode = AutoScaleMode.Dpi;
-        AutoSize = true;
-        AutoSizeMode = AutoSizeMode.GrowAndShrink;
-        Padding = new Padding(16, 12, 16, 12);
+        // The dialog used to grow with its contents, so on a 1080p screen the bottom sat off-screen with no way to scroll.
+        AutoSize = false;
+        Padding = Padding.Empty;
 
         void Save()
         {
@@ -66,7 +66,11 @@ internal sealed class SettingsForm : Form
             applied();
         }
 
-        var grid = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, Dock = DockStyle.Fill, BackColor = Bg };
+        var grid = new TableLayoutPanel
+        {
+            ColumnCount = 2, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Dock = DockStyle.None, BackColor = Bg, Padding = new Padding(16, 12, 16, 12),
+        };
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
@@ -311,7 +315,12 @@ internal sealed class SettingsForm : Form
         bottom.Margin = new Padding(0, 14, 0, 0);
         Full(bottom);
 
-        Controls.Add(grid);
+        var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Bg };
+        grid.Location = Point.Empty;
+        scroll.Controls.Add(grid);
+        Controls.Add(scroll);
+        Load += (_, _) => FitToScreen(scroll, grid);
+        HookWheel(scroll, this);
 
         void ApplyLanguage()
         {
@@ -348,6 +357,48 @@ internal sealed class SettingsForm : Form
         UiText.Changed += OnUiLanguage;
         Disposed += (_, _) => UiText.Changed -= OnUiLanguage;
         ApplyLanguage();
+    }
+
+    /// <summary>
+    /// Keeps the dialog inside the working area. What does not fit scrolls; the window itself stays put.
+    /// </summary>
+    private static void FitToScreen(Panel scroll, TableLayoutPanel grid)
+    {
+        var form = scroll.FindForm();
+        if (form is null) return;
+        grid.PerformLayout();
+        var preferred = grid.GetPreferredSize(Size.Empty);
+        if (grid.Height > preferred.Height) preferred = new Size(Math.Max(preferred.Width, grid.Width), grid.Height);
+        var work = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 1920, 1040);
+        var chromeH = form.Height - form.ClientSize.Height;
+        var chromeW = form.Width - form.ClientSize.Width;
+        if (chromeH < 8) chromeH = SystemInformation.CaptionHeight + 8;
+        if (chromeW < 8) chromeW = 16;
+        var maxH = Math.Max(320, work.Height - chromeH - 8);
+        var maxW = Math.Max(480, work.Width - chromeW - 8);
+        var needsBar = preferred.Height > maxH;
+        var bar = needsBar ? SystemInformation.VerticalScrollBarWidth : 0;
+        form.ClientSize = new Size(Math.Min(preferred.Width + bar, maxW), Math.Min(preferred.Height, maxH));
+        // A docked child is excluded from AutoScroll, so the grid stays at its own height and the panel scrolls it.
+        var overflow = grid.Right - scroll.ClientSize.Width;
+        if (overflow > 0) form.ClientSize = new Size(Math.Min(form.ClientSize.Width + overflow, maxW), form.ClientSize.Height);
+        if (form.StartPosition == FormStartPosition.CenterScreen)
+            form.Location = new Point(
+                work.Left + Math.Max(0, (work.Width - form.Width) / 2),
+                work.Top + Math.Max(0, (work.Height - form.Height) / 2));
+    }
+
+    /// <summary>The wheel scrolls the dialog. A slider keeps the wheel so volume and opacity still move.</summary>
+    private static void HookWheel(Panel scroll, Control root)
+    {
+        if (root is not TrackBar)
+            root.MouseWheel += (_, e) =>
+            {
+                if (!scroll.VerticalScroll.Visible) return;
+                scroll.AutoScrollPosition = new Point(0, Math.Max(0, -scroll.AutoScrollPosition.Y - e.Delta));
+                if (e is HandledMouseEventArgs handled) handled.Handled = true;
+            };
+        foreach (Control child in root.Controls) HookWheel(scroll, child);
     }
 
     /// <summary>Renders the window to a PNG without showing it (for checking the layout).</summary>

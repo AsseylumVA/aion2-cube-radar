@@ -563,7 +563,7 @@ internal static class OverlayRenderer
             Text(g, UiText.T("overlay.north"), small, Palette.Text, cx - 4, cy - r - 13);
             if (SendRadiusM < rangeM)
             {
-                using var send = new Pen(Color.FromArgb(110, Palette.Me), 1) { DashStyle = DashStyle.Dash };
+                using var send = new Pen(Color.FromArgb(255, 130, 196, 255), 1.25f) { DashStyle = DashStyle.Dash };
                 var sr = (float)(SendRadiusM * 100 * px2world);
                 g.DrawEllipse(send, cx - sr, cy - sr, 2 * sr, 2 * sr);
             }
