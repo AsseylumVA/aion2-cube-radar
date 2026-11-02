@@ -129,6 +129,18 @@ test('Verteron cube 70962,99276 lands on the calibrated map pixel', () => {
   assert.ok(Math.abs(py - 5125.81) < 0.05, py);
 });
 
+test('a click on the map shifts that picture point onto the player', () => {
+  const b = browser();
+  const map = { scale: 0.01, offsetX: 100, offsetY: 200 };
+  const player = { x: 50000, y: 60000 };
+  const at = { x: 80000, y: 40000 };
+  const d = b.context.mapNudgeDelta(map, player, at);
+  const shifted = { ...map, offsetX: map.offsetX + d.x, offsetY: map.offsetY + d.y };
+  const [px, py] = b.context.mapPixel(shifted, player.x, player.y);
+  const [qx, qy] = b.context.mapPixel(map, at.x, at.y);
+  assert.ok(Math.abs(px - qx) < 1e-6 && Math.abs(py - qy) < 1e-6);
+});
+
 test('invalid API badge strings fall back to the class mapping', () => {
   const b = browser();
   b.update([contact({ rankSymbol: 'R17' })]);

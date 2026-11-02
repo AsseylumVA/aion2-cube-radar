@@ -41,6 +41,7 @@ const ui = {
   mode: localStorage.getItem("mode") || "radar",
   range: Number(localStorage.getItem("range") || 200),
   basemap: localStorage.getItem("basemap") || "auto",
+  align: false,
   sound: false,
   enemies: localStorage.getItem("enemies") !== "0",
   notify: localStorage.getItem("notify") === "1" && "Notification" in window && Notification.permission === "granted",
@@ -48,6 +49,7 @@ const ui = {
 let ZONE_MAPS = [];
 const tileCache = new Map();
 let msg = null;            // last pushed state
+let frame = null;          // last radar projection, so a click can be turned back into world centimeters
 let receivedAt = 0;
 let spots = [];            // possible spots of the current zone
 let history = [];          // cube positions seen in earlier sessions
@@ -155,11 +157,34 @@ function mapBounds(map) {
   };
 }
 
+function loadNudges() {
+  try { return JSON.parse(localStorage.getItem("mapNudge") || "{}") || {}; }
+  catch { return {}; }
+}
+
+function shiftOf(id) {
+  const s = loadNudges()[id];
+  return s && Number.isFinite(s.x) && Number.isFinite(s.y) ? s : { x: 0, y: 0 };
+}
+
+function withShift(map) {
+  const s = shiftOf(map.id);
+  if (!s.x && !s.y) return map;
+  return { ...map, offsetX: map.offsetX + s.x, offsetY: map.offsetY + s.y };
+}
+
+/** Pixels to add so the player lands on the map point currently drawn at `at`. */
+function mapNudgeDelta(map, player, at) {
+  return { x: map.scale * (at.x - player.x), y: map.scale * (at.y - player.y) };
+}
+
 function currentMap() {
   if (!ZONE_MAPS.length || !msg) return null;
-  if (ui.basemap && ui.basemap !== "auto") return ZONE_MAPS.find((m) => m.id === ui.basemap) || null;
   const r = msg.radar;
-  return ZONE_MAPS.find((m) => (r.mapId != null && m.mapIds.includes(r.mapId)) || (r.zone && m.zone === r.zone)) || null;
+  const raw = ui.basemap && ui.basemap !== "auto"
+    ? ZONE_MAPS.find((m) => m.id === ui.basemap)
+    : ZONE_MAPS.find((m) => (r.mapId != null && m.mapIds.includes(r.mapId)) || (r.zone && m.zone === r.zone));
+  return raw ? withShift(raw) : null;
 }
 
 function tileImage(map, col, row) {
@@ -390,6 +415,7 @@ function draw() {
     const q = rel(p, center);
     return [w / 2 + q.e * scale, h / 2 - q.n * scale];
   };
+  frame = { center, scale, w, h };
 
   drawZoneMap(zoneMap, toScreen, w, h);
 
@@ -407,6 +433,10 @@ function draw() {
     line(8, h / 2, w - 8, h / 2);
   }
   drawText(12, 20, "N ↑", COLORS.text);
+  if (ui.align) {
+    const hint = !zoneMap ? t("web.alignNeedMap") : !m ? t("web.alignNeedPos") : t("web.alignHint");
+    drawText(w / 2, 36, hint, COLORS.text, "center");
+  }
 
   // possible spots and history
   for (const s of zoneSpots) dot(toScreen(s), 1.6, COLORS.spot);
@@ -631,6 +661,33 @@ function syncControls() {
   const e = document.getElementById("enemies");
   e.textContent = ui.enemies ? t("web.enemiesOn") : t("web.enemiesOff");
   e.classList.toggle("on", ui.enemies);
+  const align = document.getElementById("align");
+  align.textContent = ui.align ? t("web.alignOn") : t("web.align");
+  align.classList.toggle("on", ui.align);
+  document.getElementById("canvas").classList.toggle("align", ui.align);
+  const reset = document.getElementById("align-reset");
+  reset.textContent = t("web.alignReset");
+  const shown = currentMap();
+  const shift = shown ? shiftOf(shown.id) : { x: 0, y: 0 };
+  reset.hidden = !(shift.x || shift.y);
+}
+
+function worldAt(sx, sy) {
+  if (!frame || !frame.scale) return null;
+  const e = (sx - frame.w / 2) / frame.scale;
+  const n = (frame.h / 2 - sy) / frame.scale;
+  const o = orientation();
+  return {
+    x: frame.center.x + n * o.nx + e * o.ex,
+    y: frame.center.y + n * o.ny + e * o.ey,
+  };
+}
+
+function rememberNudge(id, extra) {
+  const all = loadNudges();
+  const cur = shiftOf(id);
+  all[id] = { x: cur.x + extra.x, y: cur.y + extra.y };
+  localStorage.setItem("mapNudge", JSON.stringify(all));
 }
 
 document.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => {
@@ -647,6 +704,34 @@ document.getElementById("range").addEventListener("change", (e) => {
 document.getElementById("basemap").addEventListener("change", (e) => {
   ui.basemap = e.target.value;
   localStorage.setItem("basemap", ui.basemap);
+  draw();
+});
+document.getElementById("align").addEventListener("click", () => {
+  ui.align = !ui.align;
+  syncControls();
+  if (msg) draw();
+});
+document.getElementById("align-reset").addEventListener("click", () => {
+  const map = currentMap();
+  if (map) {
+    const all = loadNudges();
+    delete all[map.id];
+    localStorage.setItem("mapNudge", JSON.stringify(all));
+  }
+  ui.align = false;
+  syncControls();
+  if (msg) draw();
+});
+document.getElementById("canvas").addEventListener("click", (e) => {
+  if (!ui.align || !msg) return;
+  const map = currentMap();
+  const player = me();
+  if (!map || !player || !frame || e.offsetX > frame.w || e.offsetY > frame.h) return;
+  const at = worldAt(e.offsetX, e.offsetY);
+  if (!at) return;
+  rememberNudge(map.id, mapNudgeDelta(map, player, at));
+  ui.align = false;
+  syncControls();
   draw();
 });
 document.getElementById("north").addEventListener("change", async (e) => {
