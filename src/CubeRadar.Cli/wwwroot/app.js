@@ -40,10 +40,13 @@ for (const k of ["visible", "out", "opening", "gone", "me", "spot", "hist", "tex
 const ui = {
   mode: localStorage.getItem("mode") || "radar",
   range: Number(localStorage.getItem("range") || 200),
+  basemap: localStorage.getItem("basemap") || "auto",
   sound: false,
   enemies: localStorage.getItem("enemies") !== "0",
   notify: localStorage.getItem("notify") === "1" && "Notification" in window && Notification.permission === "granted",
 };
+let ZONE_MAPS = [];
+const tileCache = new Map();
 let msg = null;            // last pushed state
 let receivedAt = 0;
 let spots = [];            // possible spots of the current zone
@@ -85,6 +88,8 @@ function onState() {
   if (r.zone && r.zone !== spotsZone) loadZone(r.zone);
   const sel = document.getElementById("north");
   if (document.activeElement !== sel) sel.value = r.orientation.north;
+  const base = document.getElementById("basemap");
+  if (base && document.activeElement !== base) base.value = ui.basemap;
   const faction = document.getElementById("faction");
   if (document.activeElement !== faction) faction.value = r.factionSetting || "Auto";
   renderHeader();
@@ -133,6 +138,60 @@ function heightInfo(dz) {
   return dz > 0
     ? { cls: "up", text: t("height.above", a), short: `▲${a}` }
     : { cls: "down", text: t("height.below", a), short: `▼${a}` };
+}
+
+/** World centimeters to pixels on the zone image. Image +x is world +x, image +y is world +y. */
+function mapPixel(map, x, y) {
+  return [
+    (x - map.minX) / (map.maxX - map.minX) * map.tilesX * map.tile,
+    (y - map.minY) / (map.maxY - map.minY) * map.tilesY * map.tile,
+  ];
+}
+
+function currentMap() {
+  if (!ZONE_MAPS.length || !msg) return null;
+  if (ui.basemap && ui.basemap !== "auto") return ZONE_MAPS.find((m) => m.id === ui.basemap) || null;
+  const r = msg.radar;
+  return ZONE_MAPS.find((m) => (r.mapId != null && m.mapIds.includes(r.mapId)) || (r.zone && m.zone === r.zone)) || null;
+}
+
+function tileImage(map, col, row) {
+  const key = `${map.id}:${col}:${row}`;
+  if (tileCache.has(key)) return tileCache.get(key);
+  const img = new Image();
+  const rec = { img, ready: false };
+  img.onload = () => { rec.ready = true; if (msg) draw(); };
+  img.src = `${map.path}/${map.file}_${String(col).padStart(2, "0")}_${String(row).padStart(2, "0")}.webp`;
+  tileCache.set(key, rec);
+  return rec;
+}
+
+function drawZoneMap(map, toScreen, w, h) {
+  if (!map || typeof Image !== "function") return;
+  const spanX = (map.maxX - map.minX) / map.tilesX;
+  const spanY = (map.maxY - map.minY) / map.tilesY;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, w, h);
+  ctx.clip();
+  for (let row = 0; row < map.tilesY; row++) {
+    for (let col = 0; col < map.tilesX; col++) {
+      const x0 = map.minX + col * spanX, y0 = map.minY + row * spanY;
+      const o = toScreen({ x: x0, y: y0 });
+      const ox = toScreen({ x: x0 + spanX, y: y0 });
+      const oy = toScreen({ x: x0, y: y0 + spanY });
+      const xs = [o[0], ox[0], oy[0], ox[0] + oy[0] - o[0]];
+      const ys = [o[1], ox[1], oy[1], ox[1] + oy[1] - o[1]];
+      if (Math.max(...xs) < 0 || Math.min(...xs) > w || Math.max(...ys) < 0 || Math.min(...ys) > h) continue;
+      const rec = tileImage(map, col, row);
+      if (!rec.ready) continue;
+      ctx.save();
+      ctx.transform((ox[0] - o[0]) / map.tile, (ox[1] - o[1]) / map.tile, (oy[0] - o[0]) / map.tile, (oy[1] - o[1]) / map.tile, o[0], o[1]);
+      ctx.drawImage(rec.img, 0, 0);
+      ctx.restore();
+    }
+  }
+  ctx.restore();
 }
 
 function rel(p, from) {
@@ -296,6 +355,7 @@ function draw() {
   ctx.clearRect(0, 0, w, h);
 
   const r = msg.radar, m = me(), o = orientation();
+  const zoneMap = currentMap();
   const zoneSpots = spots.map((s) => ({ x: s[0], y: s[1] }));
   const full = w;
   w -= STRIP; // the height strip takes the right edge
@@ -306,7 +366,9 @@ function draw() {
     scale = (Math.min(w, h) / 2 - 24) / (ui.range * 100);
   } else {
     const pts = [...r.cubes, ...positionedEnemies, ...r.trail.filter((p) => p.length === 2).map((p) => ({ x: p[0], y: p[1] })), ...(m ? [m] : [])];
-    const fit = pts.length ? pts : zoneSpots;
+    const fit = pts.length ? pts : (zoneMap
+      ? [{ x: zoneMap.minX, y: zoneMap.minY }, { x: zoneMap.maxX, y: zoneMap.maxY }]
+      : zoneSpots);
     if (!fit.length) return drawText(w / 2, h / 2, t("web.noData"), COLORS.muted, "center");
     const ns = fit.map((p) => p.x * o.nx + p.y * o.ny), es = fit.map((p) => p.x * o.ex + p.y * o.ey);
     const pad = 4000;
@@ -319,6 +381,8 @@ function draw() {
     const q = rel(p, center);
     return [w / 2 + q.e * scale, h / 2 - q.n * scale];
   };
+
+  drawZoneMap(zoneMap, toScreen, w, h);
 
   // grid
   ctx.lineWidth = 1;
@@ -571,6 +635,11 @@ document.getElementById("range").addEventListener("change", (e) => {
   localStorage.setItem("range", ui.range);
   draw();
 });
+document.getElementById("basemap").addEventListener("change", (e) => {
+  ui.basemap = e.target.value;
+  localStorage.setItem("basemap", ui.basemap);
+  draw();
+});
 document.getElementById("north").addEventListener("change", async (e) => {
   await fetch("/api/north", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ north: e.target.value }) });
   e.target.blur();
@@ -629,5 +698,17 @@ document.getElementById("lang").addEventListener("change", async (e) => {
   e.target.blur();
 });
 
+function loadMapCatalog() {
+  if (typeof XMLHttpRequest === "undefined") return;
+  try {
+    const xhr = new XMLHttpRequest();
+    xhr.open("GET", "maps/maps.json", false);
+    xhr.send();
+    if (xhr.status && xhr.status !== 200) return;
+    ZONE_MAPS = JSON.parse(xhr.responseText).zones || [];
+  } catch { /* tests, or the page is not served over HTTP */ }
+}
+
 applyStatic();
+loadMapCatalog();
 connect();

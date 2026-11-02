@@ -1,0 +1,36 @@
+{
+  "credit": "AION2 Interactive Map by Yihao Liu (tc-imba)",
+  "license": "CC BY-NC 4.0",
+  "url": "https://github.com/aion2-interactive-map/aion2-interactive-map",
+  "retrieved": "2026-11-02",
+  "zones": [
+    {
+      "id": "verteron",
+      "zone": "Verteron",
+      "mapIds": [1010],
+      "file": "World_L_A",
+      "path": "maps/verteron",
+      "minX": -304800,
+      "minY": -304800,
+      "maxX": 304800,
+      "maxY": 304800,
+      "tilesX": 8,
+      "tilesY": 8,
+      "tile": 1024
+    },
+    {
+      "id": "altgard",
+      "zone": "Altgard",
+      "mapIds": [],
+      "file": "World_D_A",
+      "path": "maps/altgard",
+      "minX": -304800,
+      "minY": -304800,
+      "maxX": 304800,
+      "maxY": 304800,
+      "tilesX": 8,
+      "tilesY": 8,
+      "tile": 1024
+    }
+  ]
+}

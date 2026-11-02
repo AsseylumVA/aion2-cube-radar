@@ -1,0 +1,15 @@
+Map tiles for Verteron (World_L_A) and Altgard (World_D_A).
+
+Source: AION2 Interactive Map by Yihao Liu (tc-imba)
+https://github.com/aion2-interactive-map/aion2-interactive-map
+Files: public/UI/Map/WorldMap/World_L_A/Res and World_D_A/Res
+Retrieved: 2026-11-02
+
+These images are licensed CC BY-NC 4.0.
+https://creativecommons.org/licenses/by-nc/4.0/
+Non-commercial use only. Credit the author. They are not covered by the GPL-3.0
+license of the Cube Radar source code.
+
+The plane [-304800, +304800] cm is the client's world-map size on Steam build
+25800038, the same build the radar's Verteron captures came from. Image +x is
+world +x and image +y is world +y, so north (−Y) is up.

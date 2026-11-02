@@ -29,7 +29,7 @@
   <ItemGroup>
     <Content Include="wwwroot\**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <!-- The single "Cube Radar.exe" carries the web UI and the default config inside (see AppPaths). -->
-    <EmbeddedResource Include="wwwroot\**" LogicalName="wwwroot/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="wwwroot\**" LogicalName="wwwroot/%(RecursiveDir)%(Filename)%(Extension)" />
     <EmbeddedResource Include="..\..\config\*.json" LogicalName="config/%(Filename)%(Extension)" />
   </ItemGroup>
 

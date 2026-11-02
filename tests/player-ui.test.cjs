@@ -121,6 +121,14 @@ test('badges stay visible when crowded names are suppressed and are painted over
   assert.ok(badgeIndex > nameIndex);
 });
 
+test('Verteron cube 70962,99276 lands on the calibrated map pixel', () => {
+  const b = browser();
+  const map = { minX: -304800, minY: -304800, maxX: 304800, maxY: 304800, tilesX: 8, tilesY: 8, tile: 1024 };
+  const [px, py] = b.context.mapPixel(map, 70962, 99276);
+  assert.ok(Math.abs(px - 5049.6) < 0.2, px);
+  assert.ok(Math.abs(py - 5430.1) < 0.2, py);
+});
+
 test('invalid API badge strings fall back to the class mapping', () => {
   const b = browser();
   b.update([contact({ rankSymbol: 'R17' })]);

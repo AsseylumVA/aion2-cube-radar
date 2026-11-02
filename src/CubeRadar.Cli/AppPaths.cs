@@ -65,8 +65,9 @@ internal static class AppPaths
         var assembly = typeof(AppPaths).Assembly;
         foreach (var name in assembly.GetManifestResourceNames())
         {
-            if (!name.StartsWith(prefix, StringComparison.Ordinal)) continue;
-            var target = Path.Combine(root, name.Replace('/', Path.DirectorySeparatorChar));
+            var rel = name.Replace('\\', '/');
+            if (!rel.StartsWith(prefix, StringComparison.Ordinal)) continue;
+            var target = Path.Combine(root, rel.Replace('/', Path.DirectorySeparatorChar));
             using var source = assembly.GetManifestResourceStream(name)!;
             if (File.Exists(target) && new FileInfo(target).Length == source.Length) continue;
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
