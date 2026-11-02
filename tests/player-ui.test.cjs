@@ -141,6 +141,14 @@ test('a click on the map shifts that picture point onto the player', () => {
   assert.ok(Math.abs(px - qx) < 1e-6 && Math.abs(py - qy) < 1e-6);
 });
 
+test('a spawn pixel stays on that image point when converted to world centimeters', () => {
+  const b = browser();
+  const map = { scale: 0.01, offsetX: 100, offsetY: 200 };
+  const world = b.context.spawnWorld(map, 4730, 5126);
+  const [px, py] = b.context.mapPixel(map, world.x, world.y);
+  assert.ok(Math.abs(px - 4730) < 1e-6 && Math.abs(py - 5126) < 1e-6);
+});
+
 test('invalid API badge strings fall back to the class mapping', () => {
   const b = browser();
   b.update([contact({ rankSymbol: 'R17' })]);

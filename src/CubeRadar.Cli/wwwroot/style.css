@@ -10,7 +10,7 @@
   --opening: #ffe14d;
   --gone: #6b7480;
   --me: #4da3ff;
-  --spot: #3a434e;
+  --spot: #c5ccd4;
   --hist: #9b7cf0;
   --warn: #ff6b5b;
   --enemy: #ff6b5b;
@@ -129,7 +129,7 @@ canvas.align { cursor: crosshair; }
 .enemy-card strong { color: var(--enemy); }
 .enemy-card .enemy-meta, .rank-note { color: var(--muted); font-size: 12px; }
 .rank-note { padding: 0 14px; margin: 0 0 8px; }
-.sw.spot { background: var(--spot); border-radius: 50%; }
+.sw.spot { background: var(--spot); border: 1px solid #5c656e; border-radius: 1px; }
 .sw.hist { background: var(--hist); border-radius: 50%; opacity: .7; }
 .tri { font-style: normal; font-size: 11px; margin-right: 4px; color: var(--visible); }
 

@@ -178,6 +178,29 @@ function mapNudgeDelta(map, player, at) {
   return { x: map.scale * (at.x - player.x), y: map.scale * (at.y - player.y) };
 }
 
+let SPAWN_PIXELS = {};
+
+function spawnPixels(map) {
+  return (map && SPAWN_PIXELS[map.id]) || [];
+}
+
+/** Marker pixel on the zone image back into world centimeters, using the current fit. */
+function spawnWorld(map, px, py) {
+  return { x: (px - map.offsetX) / map.scale, y: (py - map.offsetY) / map.scale };
+}
+
+function frameAround(points, w, h) {
+  const o = orientation();
+  const ns = points.map((p) => p.x * o.nx + p.y * o.ny);
+  const es = points.map((p) => p.x * o.ex + p.y * o.ey);
+  const pad = 6000;
+  const nMin = Math.min(...ns) - pad, nMax = Math.max(...ns) + pad;
+  const eMin = Math.min(...es) - pad, eMax = Math.max(...es) + pad;
+  const scale = Math.min((w - 80) / Math.max(1, eMax - eMin), (h - 80) / Math.max(1, nMax - nMin));
+  const cn = (nMin + nMax) / 2, ce = (eMin + eMax) / 2;
+  return { scale, center: { x: cn * o.nx + ce * o.ex, y: cn * o.ny + ce * o.ey } };
+}
+
 function currentMap() {
   if (!ZONE_MAPS.length || !msg) return null;
   const r = msg.radar;
@@ -411,11 +434,23 @@ function draw() {
     const cn = (nMin + nMax) / 2, ce = (eMin + eMax) / 2;
     center = { x: cn * o.nx + ce * o.ex, y: cn * o.ny + ce * o.ey };
   }
+  if (ui.align && ui.mode === "radar" && m && zoneMap && center) {
+    let best = Infinity, near = null;
+    for (const [px, py] of spawnPixels(zoneMap)) {
+      const wpt = spawnWorld(zoneMap, px, py);
+      const d = Math.hypot(wpt.x - m.x, wpt.y - m.y);
+      if (d < best) { best = d; near = wpt; }
+    }
+    if (near && best > ui.range * 100) {
+      const fitted = frameAround([m, near], w, h);
+      if (Number.isFinite(fitted.scale) && fitted.scale > 0) ({ center, scale } = fitted);
+    }
+  }
   const toScreen = (p) => {
     const q = rel(p, center);
     return [w / 2 + q.e * scale, h / 2 - q.n * scale];
   };
-  frame = { center, scale, w, h };
+  frame = { center, scale, w, h, spawns: [] };
 
   drawZoneMap(zoneMap, toScreen, w, h);
 
@@ -436,6 +471,19 @@ function draw() {
   if (ui.align) {
     const hint = !zoneMap ? t("web.alignNeedMap") : !m ? t("web.alignNeedPos") : t("web.alignHint");
     drawText(w / 2, 36, hint, COLORS.text, "center");
+  }
+
+  // known respawns stay glued to the picture; a click on one slides that picture point under the player
+  if (zoneMap) {
+    const marks = [];
+    for (const [px, py] of spawnPixels(zoneMap)) {
+      const world = spawnWorld(zoneMap, px, py);
+      const [sx, sy] = toScreen(world);
+      marks.push({ sx, sy, world });
+      if (sx < -12 || sy < -12 || sx > w + 12 || sy > h + 12) continue;
+      drawSpawn(sx, sy);
+    }
+    frame.spawns = marks;
   }
 
   // possible spots and history
@@ -527,6 +575,18 @@ function draw() {
   }
   for (const { x, y, p } of enemyMarkers.reverse()) enemyMarker(x, y, p);
   drawHeightStrip(full, h, r, m);
+}
+
+function drawSpawn(x, y) {
+  const s = 4.5;
+  ctx.beginPath();
+  ctx.rect(x - s, y - s, s * 2, s * 2);
+  ctx.fillStyle = COLORS.spot;
+  ctx.strokeStyle = "#5c656e";
+  ctx.lineWidth = 1.5;
+  ctx.fill();
+  ctx.stroke();
+  ctx.lineWidth = 1;
 }
 
 /** Square for "same height", triangle up / down for above / below us. */
@@ -727,7 +787,13 @@ document.getElementById("canvas").addEventListener("click", (e) => {
   const map = currentMap();
   const player = me();
   if (!map || !player || !frame || e.offsetX > frame.w || e.offsetY > frame.h) return;
-  const at = worldAt(e.offsetX, e.offsetY);
+  const marks = frame.spawns || [];
+  let hit = null, best = 16;
+  for (const s of marks) {
+    const d = Math.hypot(s.sx - e.offsetX, s.sy - e.offsetY);
+    if (d <= best) { best = d; hit = s; }
+  }
+  const at = hit ? hit.world : (marks.length ? null : worldAt(e.offsetX, e.offsetY));
   if (!at) return;
   rememberNudge(map.id, mapNudgeDelta(map, player, at));
   ui.align = false;
@@ -803,6 +869,18 @@ function loadMapCatalog() {
   } catch { /* tests, or the page is not served over HTTP */ }
 }
 
+function loadSpawns() {
+  if (typeof XMLHttpRequest === "undefined") return;
+  try {
+    const xhr = new XMLHttpRequest();
+    xhr.open("GET", "maps/spawns.json", false);
+    xhr.send();
+    if (xhr.status && xhr.status !== 200) return;
+    SPAWN_PIXELS = JSON.parse(xhr.responseText).zones || {};
+  } catch { /* tests, or the page is not served over HTTP */ }
+}
+
 applyStatic();
 loadMapCatalog();
+loadSpawns();
 connect();

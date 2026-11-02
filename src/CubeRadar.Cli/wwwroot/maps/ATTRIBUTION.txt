@@ -14,3 +14,7 @@ These 8192 px images are half the native world-map texture. Pixel = offset +
 scale * world centimeters, x to the right and y downward, with no flip. The
 Verteron numbers are half of the native fit for Steam build 25800038
 (scale 0.01958351 px/cm, offset 8070.94, 8307.45 on the 16384 px map).
+
+spawns.json lists the hidden-cube markers from the same project
+(public/data/markers/World_L_A.yaml and World_D_A.yaml), in image pixels.
+Same CC BY-NC 4.0 terms.
