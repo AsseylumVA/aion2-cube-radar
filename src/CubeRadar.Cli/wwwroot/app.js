@@ -794,12 +794,12 @@ function kibeliskIcon(file) {
 function drawKibelisk(x, y, file, here) {
   const img = kibeliskIcon(file);
   if (!img) return;
-  const s = here ? 28 : 22;
+  const s = here ? 38 : 30;
   ctx.drawImage(img, x - s / 2, y - s / 2, s, s);
 }
 
 function drawSpawn(x, y, here) {
-  const s = here ? 16 : 12;
+  const s = here ? 22 : 17;
   if (spawnIcon && spawnIcon.complete && spawnIcon.naturalWidth) {
     ctx.drawImage(spawnIcon, x - s / 2, y - s / 2, s, s);
     return;
