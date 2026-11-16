@@ -83,6 +83,67 @@ public class PlayerRadarTests
     }
 
     [Fact]
+    public void Same_faction_hostility_byte_marks_the_other_server_as_an_enemy()
+    {
+        // pcId 35 agrees with race 2 and gender 1, so both cards are Asmodian. The next byte is 1 for a hostile
+        // other server (Daruma013, and every card whose server id read as 2310) and 2 for the recipient's server.
+        static byte[] Card(byte id, byte[] name, byte hostility) =>
+        [
+            id, 0x07, 0x20, 0xA0, 0x01, 0x17, (byte)name.Length, ..name,
+            0x23, 0x00, 0x00, 0x00, 0x02, 0x01, hostility,
+        ];
+
+        var foeCard = Card(0x64, "Foe"u8.ToArray(), 1);
+        var kinCard = Card(0x65, "Kin"u8.ToArray(), 2);
+        Assert.True(PlayerMessages.TryParseIdentity(foeCard, false, out var foe));
+        Assert.Equal(PlayerFaction.Asmodian, foe.Faction);
+        Assert.True(foe.Hostile);
+        Assert.True(PlayerMessages.TryParseIdentity(kinCard, false, out var kin));
+        Assert.False(kin.Hostile);
+        Assert.True(PlayerMessages.TryParseIdentity(Identity("EnemyB").Body, false, out var legacy));
+        Assert.Null(legacy.Hostile);
+
+        var engine = new RadarEngine(new RadarConfig());
+        engine.OnFrame(1, 0x4536, foeCard);
+        engine.OnFrame(1, 0x4536, kinCard);
+        Assert.True(Assert.Single(engine.Snapshot().Players, p => p.Name == "Foe").IsEnemy);
+        Assert.Null(Assert.Single(engine.Snapshot().Players, p => p.Name == "Kin").IsEnemy);
+
+        engine.SetOwnFaction("Asmodian");
+        Assert.True(Assert.Single(engine.Snapshot().Players, p => p.Name == "Foe").IsEnemy);
+        Assert.False(Assert.Single(engine.Snapshot().Players, p => p.Name == "Kin").IsEnemy);
+
+        engine.SetOwnFaction("Elyos");
+        Assert.True(Assert.Single(engine.Snapshot().Players, p => p.Name == "Foe").IsEnemy);
+        Assert.True(Assert.Single(engine.Snapshot().Players, p => p.Name == "Kin").IsEnemy);
+    }
+
+    [Fact]
+    public void Enemy_alert_fires_only_when_the_first_enemy_appears()
+    {
+        static byte[] Card(byte id, byte[] name, byte hostility) =>
+        [
+            id, 0x07, 0x20, 0xA0, 0x01, 0x17, (byte)name.Length, ..name,
+            0x23, 0x00, 0x00, 0x00, 0x02, 0x01, hostility,
+        ];
+
+        var engine = new RadarEngine(new RadarConfig());
+        var alerts = 0;
+        engine.EnemyAppeared += () => alerts++;
+        engine.SetOwnFaction("Asmodian");
+        engine.OnFrame(1, 0x4536, Card(0x65, "Kin"u8.ToArray(), 2));
+        Assert.Equal(0, alerts);
+        engine.OnFrame(2, 0x4536, Card(0x64, "Foe"u8.ToArray(), 1));
+        engine.OnFrame(3, 0x4536, Card(0x66, "Foe2"u8.ToArray(), 1));
+        Assert.Equal(1, alerts);
+        engine.OnFrame(4, 0x4736, [0x64, 0, 0]);
+        Assert.Equal(1, alerts);
+        engine.OnFrame(5, 0x4736, [0x66, 0, 0]);
+        engine.OnFrame(6, 0x4536, Card(0x64, "Foe"u8.ToArray(), 1));
+        Assert.Equal(2, alerts);
+    }
+
+    [Fact]
     public void Unseen_movement_does_not_create_contacts_and_stale_positions_are_flagged()
     {
         var engine = new RadarEngine(new RadarConfig());

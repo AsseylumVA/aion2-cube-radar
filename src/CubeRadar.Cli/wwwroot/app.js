@@ -183,6 +183,8 @@ function mapNudgeDelta(map, player, at) {
 let SPAWNS = {};
 /** Kibelisks (teleports) in packet centimeters: [x, y, name]. Alignment clicks only these. */
 let KIBELISKS = {};
+/** Flight rings on the Reshanta maps, in packet centimeters: [x, y]. */
+let FLIGHT_RINGS = {};
 
 function zoneSpawns(id) {
   return (id && SPAWNS[id]) || [];
@@ -190,6 +192,10 @@ function zoneSpawns(id) {
 
 function zoneKibelisks(id) {
   return (id && KIBELISKS[id]) || [];
+}
+
+function zoneFlightRings(id) {
+  return (id && FLIGHT_RINGS[id]) || [];
 }
 
 /** Background wins until a zone packet arrives; after that the packet wins in auto mode. */
@@ -622,6 +628,13 @@ function draw() {
   for (const s of history) dot(toScreen(s), 2.4, COLORS.hist);
   ctx.globalAlpha = 1;
 
+  for (const [x, y] of zoneFlightRings(zoneId)) {
+    const [sx, sy] = toScreen({ x, y });
+    if (sx < -20 || sx > w + 20 || sy < -20 || sy > h + 20) continue;
+    const near = m && Math.hypot(x - m.x, y - m.y) < 400;
+    drawKibelisk(sx, sy, "flight-ring.webp", near);
+  }
+
   // own trail and position
   if (r.trail.length > 1) {
     ctx.strokeStyle = COLORS.me;
@@ -909,16 +922,43 @@ function announce(cubes) {
 
 function chime() {
   const now = audio.currentTime;
-  [[880, 0], [1320, 0.16]].forEach(([f, d]) => {
-    const osc = audio.createOscillator(), gain = audio.createGain();
-    osc.frequency.value = f;
-    gain.gain.setValueAtTime(0.0001, now + d);
-    gain.gain.exponentialRampToValueAtTime(0.25, now + d + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + d + 0.3);
-    osc.connect(gain).connect(audio.destination);
-    osc.start(now + d);
-    osc.stop(now + d + 0.32);
-  });
+  const notes = [
+    [293.66, 0.00, 0.34, 0.07, 0.00, 0.5],
+    [587.33, 0.00, 0.42, 0.13, -0.32, 1.2],
+    [880.00, 0.058, 0.44, 0.12, 0.26, 1.1],
+    [1318.51, 0.118, 0.48, 0.11, -0.22, 1.0],
+    [1479.98, 0.176, 0.50, 0.10, 0.20, 0.85],
+  ];
+  for (const [hz, delay, dur, amp, panVal, fmIdx] of notes) {
+    const t0 = now + delay;
+    const car = audio.createOscillator();
+    const mod = audio.createOscillator();
+    const modGain = audio.createGain();
+    const env = audio.createGain();
+    car.type = "sine";
+    mod.type = "sine";
+    car.frequency.value = hz;
+    mod.frequency.value = hz * 2;
+    modGain.gain.setValueAtTime(hz * fmIdx, t0);
+    modGain.gain.exponentialRampToValueAtTime(0.01, t0 + 0.045);
+    env.gain.setValueAtTime(0.0001, t0);
+    env.gain.linearRampToValueAtTime(amp, t0 + 0.004);
+    env.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    mod.connect(modGain).connect(car.frequency);
+    let out = env;
+    if (typeof audio.createStereoPanner === "function") {
+      const panner = audio.createStereoPanner();
+      panner.pan.value = panVal;
+      env.connect(panner);
+      out = panner;
+    }
+    car.connect(env);
+    out.connect(audio.destination);
+    mod.start(t0);
+    car.start(t0);
+    mod.stop(t0 + dur + 0.02);
+    car.stop(t0 + dur + 0.02);
+  }
 }
 
 // ------------------------------------------------------------------ controls
@@ -971,6 +1011,7 @@ function rememberNudge(id, extra) {
 }
 
 function publishNudge(id) {
+  if (typeof fetch !== "function") return;
   const s = shiftOf(id);
   fetch("/api/map-nudge", {
     method: "POST",
@@ -981,6 +1022,14 @@ function publishNudge(id) {
 
 function publishNudges() {
   for (const id of Object.keys(loadNudges())) publishNudge(id);
+}
+
+/** Old shifts were fitted to the previous map scale and would slide the picture off the marks. */
+function dropStaleNudge() {
+  if (localStorage.getItem("mapFit") === "816") return;
+  localStorage.removeItem("mapNudge");
+  localStorage.setItem("mapFit", "816");
+  for (const id of ["verteron", "altgard"]) publishNudge(id);
 }
 
 document.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => {
@@ -1135,6 +1184,19 @@ function loadMapCatalog() {
   } catch { /* tests, or the page is not served over HTTP */ }
 }
 
+function loadFlightRings() {
+  if (typeof XMLHttpRequest === "undefined") return;
+  try {
+    const xhr = new XMLHttpRequest();
+    xhr.open("GET", "maps/flight-rings.json", false);
+    xhr.send();
+    if (xhr.status && xhr.status !== 200) return;
+    const data = JSON.parse(xhr.responseText);
+    FLIGHT_RINGS = data.zones || {};
+    kibeliskIcon(data.icon || "flight-ring.webp");
+  } catch { /* tests, or the page is not served over HTTP */ }
+}
+
 function loadKibelisks() {
   if (typeof XMLHttpRequest === "undefined") return;
   try {
@@ -1163,6 +1225,8 @@ applyStatic();
 loadMapCatalog();
 loadSpawns();
 loadKibelisks();
+loadFlightRings();
 loadSpawnIcon();
+dropStaleNudge();
 publishNudges();
 connect();

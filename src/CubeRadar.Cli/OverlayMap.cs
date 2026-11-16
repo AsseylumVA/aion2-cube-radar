@@ -8,14 +8,21 @@ using CubeRadar.Core.Radar;
 namespace CubeRadar.Cli;
 
 /// <summary>
-/// The same zone picture the web radar draws, filling the square reserved for the map. Only the background: live
-/// cubes stay the colored markers drawn by <see cref="OverlayRenderer"/>.
+/// The same zone picture the web radar draws, filling the square reserved for the map, plus the static marks from
+/// <c>spawns.json</c> / <c>flight-rings.json</c> / <c>kibelisks.json</c>. Live cubes stay the colored markers drawn by
+/// <see cref="OverlayRenderer"/>.
 /// </summary>
 internal static class OverlayMap
 {
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
     private static readonly Dictionary<string, Bitmap?> Tiles = new();
+    private static readonly Dictionary<string, Bitmap?> Icons = new();
     private static ZoneFile[]? _zones;
+    private static Dictionary<string, PointF[]>? _spawns;
+    private static Dictionary<string, PointF[]>? _flightRings;
+    private static Dictionary<string, Mark[]>? _kibelisks;
+    private const float LiveCubeClearance = 300; // cm; same cutoff as the web map
+    private readonly record struct Mark(float X, float Y, string? Icon);
 
     public static void Draw(Graphics g, RadarSnapshot snapshot, double playerX, double playerY, Func<double, double, PointF> toScreen,
         RectangleF area, IReadOnlyDictionary<string, MapNudge>? nudges)
@@ -55,6 +62,165 @@ internal static class OverlayMap
         {
             g.Restore(saved);
         }
+    }
+
+    /// <summary>Static web-map marks inside the radar disc. Spawn marks next to a live cube are skipped.</summary>
+    public static void DrawMarks(Graphics g, RadarSnapshot snapshot, Func<double, double, PointF> toScreen,
+        PointF center, float radius, bool showCubes, bool showFlightRings, bool showKibelisks)
+    {
+        if (!showCubes && !showFlightRings && !showKibelisks) return;
+        var zone = Find(snapshot);
+        if (zone is null) return;
+        var saved = g.Save();
+        try
+        {
+            using var clip = new GraphicsPath();
+            clip.AddEllipse(center.X - radius, center.Y - radius, radius * 2, radius * 2);
+            g.SetClip(clip);
+            if (showCubes)
+            {
+                var icon = LoadIcon("maps/hidden-cube.webp");
+                foreach (var p in Points(Spawns(), zone.Id))
+                {
+                    if (snapshot.Cubes.Any(c => Dist2(c.X, c.Y, p.X, p.Y) < LiveCubeClearance * LiveCubeClearance)) continue;
+                    var s = toScreen(p.X, p.Y);
+                    if (!Inside(s, center, radius - 4)) continue;
+                    DrawIcon(g, icon, s, 13f, Color.FromArgb(180, 231, 215, 162));
+                }
+            }
+            if (showFlightRings)
+            {
+                var icon = LoadIcon("maps/icons/flight-ring.webp");
+                foreach (var p in Points(FlightRings(), zone.Id))
+                {
+                    var s = toScreen(p.X, p.Y);
+                    if (!Inside(s, center, radius - 4)) continue;
+                    DrawIcon(g, icon, s, 17f, Color.FromArgb(200, 130, 196, 255));
+                }
+            }
+            if (showKibelisks)
+            {
+                foreach (var mark in Marks(Kibelisks(), zone.Id))
+                {
+                    var s = toScreen(mark.X, mark.Y);
+                    if (!Inside(s, center, radius - 4)) continue;
+                    var icon = LoadIcon(string.IsNullOrEmpty(mark.Icon) ? "maps/icons/abyss-portal.webp" : "maps/icons/" + mark.Icon);
+                    DrawIcon(g, icon, s, 19f, Color.FromArgb(210, 94, 224, 197));
+                }
+            }
+        }
+        finally
+        {
+            g.Restore(saved);
+        }
+    }
+
+    private static void DrawIcon(Graphics g, Bitmap? icon, PointF at, float size, Color fallback)
+    {
+        if (icon is not null)
+        {
+            g.DrawImage(icon, at.X - size / 2, at.Y - size / 2, size, size);
+            return;
+        }
+        using var brush = new SolidBrush(fallback);
+        g.FillRectangle(brush, at.X - size / 4, at.Y - size / 4, size / 2, size / 2);
+    }
+
+    private static bool Inside(PointF p, PointF c, float r)
+    {
+        var dx = p.X - c.X;
+        var dy = p.Y - c.Y;
+        return dx * dx + dy * dy <= r * r;
+    }
+
+    private static double Dist2(double x0, double y0, double x1, double y1)
+    {
+        var dx = x0 - x1;
+        var dy = y0 - y1;
+        return dx * dx + dy * dy;
+    }
+
+    private static IEnumerable<PointF> Points(Dictionary<string, PointF[]> catalog, string zoneId) =>
+        catalog.TryGetValue(zoneId, out var list) ? list : [];
+
+    private static IEnumerable<Mark> Marks(Dictionary<string, Mark[]> catalog, string zoneId) =>
+        catalog.TryGetValue(zoneId, out var list) ? list : [];
+
+    private static Dictionary<string, PointF[]> Spawns() => _spawns ??= LoadPoints("spawns.json");
+
+    private static Dictionary<string, PointF[]> FlightRings() => _flightRings ??= LoadPoints("flight-rings.json");
+
+    private static Dictionary<string, Mark[]> Kibelisks() => _kibelisks ??= LoadMarks("kibelisks.json");
+
+    private static Dictionary<string, PointF[]> LoadPoints(string file)
+    {
+        try
+        {
+            var path = Path.Combine(AppPaths.WebRoot, "maps", file);
+            using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            if (!doc.RootElement.TryGetProperty("zones", out var zones)) return new();
+            var result = new Dictionary<string, PointF[]>(StringComparer.OrdinalIgnoreCase);
+            foreach (var zone in zones.EnumerateObject())
+            {
+                var list = new List<PointF>();
+                foreach (var row in zone.Value.EnumerateArray())
+                {
+                    if (row.GetArrayLength() < 2) continue;
+                    list.Add(new PointF((float)row[0].GetDouble(), (float)row[1].GetDouble()));
+                }
+                result[zone.Name] = list.ToArray();
+            }
+            return result;
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+        {
+            return new();
+        }
+    }
+
+    /// <summary>Rows are <c>[x, y, name, icon]</c>; the icon is the same webp the interactive map uses.</summary>
+    private static Dictionary<string, Mark[]> LoadMarks(string file)
+    {
+        try
+        {
+            var path = Path.Combine(AppPaths.WebRoot, "maps", file);
+            using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            if (!doc.RootElement.TryGetProperty("zones", out var zones)) return new();
+            var result = new Dictionary<string, Mark[]>(StringComparer.OrdinalIgnoreCase);
+            foreach (var zone in zones.EnumerateObject())
+            {
+                var list = new List<Mark>();
+                foreach (var row in zone.Value.EnumerateArray())
+                {
+                    if (row.GetArrayLength() < 2) continue;
+                    var icon = row.GetArrayLength() >= 4 ? row[3].GetString() : null;
+                    list.Add(new Mark((float)row[0].GetDouble(), (float)row[1].GetDouble(), icon));
+                }
+                result[zone.Name] = list.ToArray();
+            }
+            return result;
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+        {
+            return new();
+        }
+    }
+
+    private static Bitmap? LoadIcon(string relative)
+    {
+        var path = Path.Combine(AppPaths.WebRoot, relative.Replace('/', Path.DirectorySeparatorChar));
+        if (Icons.TryGetValue(path, out var cached)) return cached;
+        Bitmap? bitmap = null;
+        try
+        {
+            if (File.Exists(path)) bitmap = Webp.Decode(path);
+        }
+        catch (Exception ex) when (ex is IOException or COMException or ArgumentException or ExternalException)
+        {
+            bitmap = null;
+        }
+        Icons[path] = bitmap;
+        return bitmap;
     }
 
     /// <summary>Pixels per world centimeter at the player, so the visible disc can be measured in centimeters.</summary>

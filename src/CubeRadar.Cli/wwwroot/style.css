@@ -146,6 +146,7 @@ canvas.panning { cursor: grabbing; }
 .rank-note { padding: 0 14px; margin: 0 0 8px; }
 .sw.spot { width: 14px; height: 14px; background: url("maps/hidden-cube.webp") center / contain no-repeat; border: none; border-radius: 0; }
 .sw.kibelisk { width: 16px; height: 16px; background: url("maps/icons/kibelisk-elyos.webp") center / contain no-repeat; border-radius: 0; }
+.sw.flight { width: 16px; height: 16px; background: url("maps/icons/flight-ring.webp") center / contain no-repeat; border-radius: 0; }
 .sw.hist { background: var(--hist); border-radius: 50%; opacity: .7; }
 .tri { font-style: normal; font-size: 11px; margin-right: 4px; color: var(--visible); }
 

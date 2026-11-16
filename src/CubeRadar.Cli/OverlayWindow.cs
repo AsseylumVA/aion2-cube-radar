@@ -150,7 +150,8 @@ internal sealed class OverlayWindow : Form
         if (!IsHandleCreated || size.Width <= 0 || size.Height <= 0) return;
         using var frame = new Bitmap(size.Width, size.Height, PixelFormat.Format32bppArgb);
         using (var g = Graphics.FromImage(frame))
-            OverlayRenderer.Render(g, size, _last, RenderScale, _settings.OverlayRangeM, _settings.ShowEnemies, _settings.MapNudges);
+            OverlayRenderer.Render(g, size, _last, RenderScale, _settings.OverlayRangeM, _settings.ShowEnemies, _settings.MapNudges,
+                _settings.ShowMapCubes, _settings.ShowFlightRings, _settings.ShowKibelisks);
         OverlayRenderer.ApplyOpacity(frame, RenderScale, Math.Clamp(_settings.OverlayOpacityPct, 40, 100),
             Math.Clamp(_settings.OverlayListOpacityPct ?? _settings.OverlayOpacityPct, 40, 100));
         var bitmap = frame.GetHbitmap(Color.FromArgb(0)); // premultiplied alpha, as UpdateLayeredWindow needs it
@@ -511,7 +512,8 @@ internal static class OverlayRenderer
         Rectangle.Round(new RectangleF((Side - 24) * scale, 1 * scale, 22 * scale, Header * scale - 2 * scale));
 
     public static void Render(Graphics g, Size size, RadarSnapshot? s, float scale, int rangeM, bool showEnemies = true,
-        IReadOnlyDictionary<string, MapNudge>? nudges = null)
+        IReadOnlyDictionary<string, MapNudge>? nudges = null, bool showMapCubes = true, bool showFlightRings = true,
+        bool showKibelisks = true)
     {
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
@@ -587,9 +589,10 @@ internal static class OverlayRenderer
             return new PointF(cx + (float)(e * px2world), cy - (float)(n * px2world));
         }
 
-        // Zone picture only, the whole square under the header. Spawn points stay on the web map.
+        // Zone picture, the whole square under the header. Static web-map marks (cube spots, flight rings) sit under the rings.
         var mapArea = new RectangleF(1, Header, Side - 2, Side);
         OverlayMap.Draw(g, s, me.X, me.Y, ToScreen, mapArea, nudges);
+        OverlayMap.DrawMarks(g, s, ToScreen, new PointF(cx, cy), r, showMapCubes, showFlightRings, showKibelisks);
         Rings();
 
         // own trail (last ~2 minutes): shows where we came from, i.e. roughly where we are heading

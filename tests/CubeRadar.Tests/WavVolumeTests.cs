@@ -18,11 +18,32 @@ public class WavVolumeTests
         var full = WavVolume.Beep(100);
         Assert.Equal("RIFF", System.Text.Encoding.ASCII.GetString(full, 0, 4));
         Assert.Equal(full.Length - 8, BinaryPrimitives.ReadInt32LittleEndian(full.AsSpan(4)));
-        Assert.Equal(WavVolume.SampleRate * 300 / 1000 * 2, BinaryPrimitives.ReadInt32LittleEndian(full.AsSpan(40))); // 120 + 20 + 160 ms
+        Assert.Equal(2, BinaryPrimitives.ReadInt16LittleEndian(full.AsSpan(22))); // stereo
+        Assert.Equal(WavVolume.SampleRate * 620 / 1000 * 4, BinaryPrimitives.ReadInt32LittleEndian(full.AsSpan(40)));
 
-        Assert.InRange(MaxSample(full), 0.69 * short.MaxValue, 0.71 * short.MaxValue);
-        Assert.InRange(MaxSample(WavVolume.Beep(50)), 0.24 * 0.7 * short.MaxValue, 0.26 * 0.7 * short.MaxValue);
+        var peak = MaxSample(full);
+        Assert.InRange(peak, 0.46 * short.MaxValue, 0.50 * short.MaxValue);
+        Assert.InRange(MaxSample(WavVolume.Beep(50)), peak * 0.24, peak * 0.26);
         Assert.True(MaxSample(WavVolume.Beep(10)) < MaxSample(WavVolume.Beep(20)));
+    }
+
+    [Fact]
+    public void Enemy_alert_is_a_stereo_wav_and_follows_the_volume()
+    {
+        var full = WavVolume.EnemyAlert(100);
+        Assert.Equal("RIFF", System.Text.Encoding.ASCII.GetString(full, 0, 4));
+        Assert.Equal(full.Length - 8, BinaryPrimitives.ReadInt32LittleEndian(full.AsSpan(4)));
+        Assert.Equal(2, BinaryPrimitives.ReadInt16LittleEndian(full.AsSpan(22))); // stereo
+        Assert.Equal(WavVolume.SampleRate * 520 / 1000 * 4, BinaryPrimitives.ReadInt32LittleEndian(full.AsSpan(40)));
+
+        var stereoDiff = 0L;
+        for (var i = 44; i + 4 <= full.Length; i += 4)
+            stereoDiff += Math.Abs(BinaryPrimitives.ReadInt16LittleEndian(full.AsSpan(i)) - BinaryPrimitives.ReadInt16LittleEndian(full.AsSpan(i + 2)));
+        Assert.True(stereoDiff > 0);
+
+        var peak = MaxSample(full);
+        Assert.InRange(peak, 0.40 * short.MaxValue, 0.44 * short.MaxValue);
+        Assert.InRange(MaxSample(WavVolume.EnemyAlert(50)), peak * 0.24, peak * 0.26);
     }
 
     [Fact]

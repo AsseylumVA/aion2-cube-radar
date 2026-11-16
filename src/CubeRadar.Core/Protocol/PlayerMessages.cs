@@ -8,14 +8,14 @@ public enum PlayerFaction { Unknown, Elyos, Asmodian }
 /// <see cref="PlayerFaction.Unknown"/> unless pcId, race and gender agree; <see cref="RankCode"/> is null unless the
 /// observed tail matches exactly, and <see cref="RankName"/> is only set for codes matched to the rank shown in-game.</summary>
 public readonly record struct PlayerIdentity(uint EntityId, string Name, uint PcId, PlayerFaction Faction, uint? RankCode,
-    string? RankName);
+    string? RankName, bool? Hostile = null);
 
 /// <summary>
 /// Passive decoders for player records (Global, docs/FINDINGS.md O6–O9). The name prefix is verified on real records
 /// (fixtures/players); everything after it is checked so strictly that a mismatch degrades to "unknown", never to a guess:
 /// <code>
 /// identity  id varint, mask1 u32, mask2 u8 (bit 0 set), name length u8 (1..36), name UTF-8, then
-///   other   pcId u32, race u8, gender u8, …, [8 × 00, 21|26 f4 cb 1f, u32, rank u32, u32, 5 × 00, optional 00 (or 01 for tag 26)]
+///   other   pcId u32, race u8, gender u8, hostility u8, …, [8 × 00, 21|26 f4 cb 1f, u32, rank u32, u32, 5 × 00, optional 00 (or 01 for tag 26)]
 ///   self    server u16, pcId u32, race u8, …
 /// position  id varint, absolute: 2 bytes | else: flags u8, [u8 if flags &amp; 1]; then x y z f32
 /// removed   id varint, ≥ 2 bytes (meaning unknown)
@@ -44,6 +44,7 @@ public static class PlayerMessages
         uint pcId = 0;
         var faction = PlayerFaction.Unknown;
         uint? rank = null;
+        bool? hostile = null;
         if (isSelf)
         {
             // The server id only has to be plausible; its band is not used to tell the faction. No rank for the own player.
@@ -55,9 +56,14 @@ public static class PlayerMessages
                  Wire.TryU8(body, ref o, out var gender))
         {
             faction = Faction(pcId, race, gender);
+            // 1 = hostile even at the same race (other Asmodian server; Daruma013 and every card whose server id
+            // read as 2310). 2 = the recipient's own server (every card that read as 2316). Any other value,
+            // including the zeroed middle of older fixtures, stays unknown.
+            if (o < body.Length)
+                hostile = body[o] switch { 1 => true, 2 => false, _ => null };
             rank = RankTail(body[o..]);
         }
-        identity = new PlayerIdentity(id, name, pcId, faction, rank, RankName(rank));
+        identity = new PlayerIdentity(id, name, pcId, faction, rank, RankName(rank), hostile);
         return true;
     }
 

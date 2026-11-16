@@ -26,6 +26,12 @@ internal sealed class RadarSettings
     /// <summary>Auto uses self identity; manual selection works when starting mid-session.</summary>
     public string OwnFaction { get; set; } = "Auto";
     public bool ShowEnemies { get; set; } = true;
+    /// <summary>Overlay: known cube spawn points from the web map (<c>spawns.json</c>).</summary>
+    public bool ShowMapCubes { get; set; } = true;
+    /// <summary>Overlay: flight rings from the web map (<c>flight-rings.json</c>).</summary>
+    public bool ShowFlightRings { get; set; } = true;
+    /// <summary>Overlay: kibelisks / teleports from the web map (<c>kibelisks.json</c>).</summary>
+    public bool ShowKibelisks { get; set; } = true;
     public int? OverlayX { get; set; }
     public int? OverlayY { get; set; }
     public bool OverlayVisible { get; set; } = true;

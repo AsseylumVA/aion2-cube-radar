@@ -1,28 +1,37 @@
-Map tiles for Verteron (World_L_A) and Altgard (World_D_A).
+Map tiles for Verteron (World_L_A), Altgard (World_D_A), Eltnen (World_L_B),
+Morheim (World_D_B) and the three Reshanta levels (Abyss_Reshanta_A, C and D).
 
 Source: AION2 Interactive Map by Yihao Liu (tc-imba)
 https://github.com/aion2-interactive-map/aion2-interactive-map
-Files: public/UI/Map/WorldMap/World_L_A/Res and World_D_A/Res
-Retrieved: 2026-11-02
+Verteron and Altgard: public/UI/Map/WorldMap/World_L_A/Res and World_D_A/Res,
+retrieved 2026-11-02. Eltnen, Morheim and Reshanta: the same pictures as served
+by https://mmorpg-aion2.ru/interactive-map/ , retrieved 2026-11-17.
 
 These images are licensed CC BY-NC 4.0.
 https://creativecommons.org/licenses/by-nc/4.0/
 Non-commercial use only. Credit the author. They are not covered by the GPL-3.0
 license of the Cube Radar source code.
 
-These 8192 px images are half the native world-map texture. Pixel = offset +
-scale * world centimeters, x to the right and y downward, with no flip. The
-Verteron numbers are half of the native fit for Steam build 25800038
-(scale 0.01958351 px/cm, offset 8070.94, 8307.45 on the 16384 px map).
+Each picture uses the same square as the interactive map. Verteron, Altgard,
+Eltnen and Morheim are 8192 px from -408000 to 408000 cm. Lower Reshanta is
+4096 px from -204000 to 204000 cm. Middle and Upper Reshanta are 2048 px from
+-102000 to 102000 cm. Pixel = offset + scale * world centimeters, x to the
+right and y downward, with no flip. scale = 8192/816000. Offsets are 4096,
+2048 and 1024.
 
-spawns.json lists every possible Hidden Cube spot (Verteron 1440, Altgard 1371)
-in packet centimeters. Source: https://mmorpg-aion2.ru/interactive-map/
+spawns.json lists every possible Hidden Cube spot (Verteron 1440, Altgard 1371,
+Eltnen 912, Morheim 910) in packet centimeters. The Reshanta maps have no
+hidden-cube spots. Source: https://mmorpg-aion2.ru/interactive-map/
 A spot is drawn even after the cube has been collected.
 
-kibelisks.json lists the "Телепорты и кибелиски" points from the same map
-(Verteron 62, Altgard 62), also in packet centimeters. Map alignment clicks
-only these points. Their icons are the map's own marker images:
+kibelisks.json lists the "Телепорты и кибелиски" points from the same map,
+also in packet centimeters. Map alignment clicks only these points. Their icons
+are the map's own marker images:
 maps/icons/kibelisk-elyos.webp, kibelisk-asmodian.webp and abyss-portal.webp.
+
+flight-ring.webp is the "Полётные кольца" icon from the same map. flight-rings.json
+lists those rings on Lower Reshanta (49) and Upper Reshanta (32). Middle Reshanta
+has none. They are not used for map alignment.
 
 hidden-cube.webp is the Hidden Cube icon from the same interactive map
 (public/images/HiddenCube.webp), CC BY-NC 4.0.

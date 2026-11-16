@@ -60,6 +60,9 @@ internal static class CubeSound
         return note;
     }
 
+    /// <summary>Plays generated WAV bytes (the enemy alert). A sound still playing is replaced.</summary>
+    public static bool PlayGenerated(byte[] wav) => Start(wav);
+
     public static void Close()
     {
         lock (Gate) Release();

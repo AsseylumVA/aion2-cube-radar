@@ -121,12 +121,25 @@ test('badges stay visible when crowded names are suppressed and are painted over
   assert.ok(badgeIndex > nameIndex);
 });
 
-test('Verteron cube 70962,99276 lands on the calibrated map pixel', () => {
+test('Verteron cube 70962,99276 lands on the same pixel as the map picture', () => {
   const b = browser();
-  const map = { scale: 0.009791754817436571, offsetX: 4035.4689879924563, offsetY: 4153.7253769234385 };
+  const maps = JSON.parse(fs.readFileSync(path.join(__dirname, '../src/CubeRadar.Cli/wwwroot/maps/maps.json'), 'utf8'));
+  const map = maps.zones.find((z) => z.id === 'verteron');
+  const alt = maps.zones.find((z) => z.id === 'altgard');
+  const onSquare = (v) => (v + 408000) / 816000 * 8192;
   const [px, py] = b.context.mapPixel(map, 70962, 99276);
-  assert.ok(Math.abs(px - 4730.31) < 0.05, px);
-  assert.ok(Math.abs(py - 5125.81) < 0.05, py);
+  assert.ok(Math.abs(px - onSquare(70962)) < 0.05, px);
+  assert.ok(Math.abs(py - onSquare(99276)) < 0.05, py);
+  assert.equal(alt.scale, map.scale);
+  assert.equal(alt.offsetX, 4096);
+  assert.equal(alt.offsetY, 4096);
+  const elten = maps.zones.find((z) => z.id === 'eltnen');
+  const morheim = maps.zones.find((z) => z.id === 'morheim');
+  assert.ok(elten.mapIds.includes(1011) && elten.mapIds.includes(820003));
+  assert.ok(morheim.mapIds.includes(1111) && morheim.mapIds.includes(870003));
+  assert.deepEqual(maps.zones.find((z) => z.id === 'reshanta-lower').mapIds, [20]);
+  assert.deepEqual(maps.zones.find((z) => z.id === 'reshanta-middle').mapIds, [22]);
+  assert.deepEqual(maps.zones.find((z) => z.id === 'reshanta-upper').mapIds, [23]);
 });
 
 test('a click on the map shifts that picture point onto the player', () => {
@@ -153,7 +166,12 @@ test('kibelisks are the only alignment landmarks, in both starter zones', () => 
   const data = JSON.parse(fs.readFileSync(path.join(__dirname, '../src/CubeRadar.Cli/wwwroot/maps/kibelisks.json'), 'utf8'));
   assert.equal(data.zones.verteron.length, 62);
   assert.equal(data.zones.altgard.length, 62);
-  for (const zone of [data.zones.verteron, data.zones.altgard]) {
+  assert.equal(data.zones.eltnen.length, 20);
+  assert.equal(data.zones.morheim.length, 20);
+  assert.equal(data.zones['reshanta-lower'].length, 4);
+  assert.equal(data.zones['reshanta-middle'].length, 4);
+  assert.equal(data.zones['reshanta-upper'].length, 2);
+  for (const zone of Object.values(data.zones)) {
     for (const row of zone) {
       assert.equal(row.length, 4);
       assert.equal(typeof row[0], 'number');
@@ -166,10 +184,27 @@ test('kibelisks are the only alignment landmarks, in both starter zones', () => 
   }
 });
 
+test('Reshanta flight rings use the interactive-map icon', () => {
+  const data = JSON.parse(fs.readFileSync(path.join(__dirname, '../src/CubeRadar.Cli/wwwroot/maps/flight-rings.json'), 'utf8'));
+  assert.equal(data.zones['reshanta-lower'].length, 49);
+  assert.equal(data.zones['reshanta-middle'].length, 0);
+  assert.equal(data.zones['reshanta-upper'].length, 32);
+  assert.equal(data.icon, 'flight-ring.webp');
+  assert.ok(fs.existsSync(path.join(__dirname, '../src/CubeRadar.Cli/wwwroot/maps/icons', data.icon)));
+  for (const row of [...data.zones['reshanta-lower'], ...data.zones['reshanta-upper']]) {
+    assert.equal(row.length, 2);
+    assert.equal(typeof row[0], 'number');
+    assert.equal(typeof row[1], 'number');
+  }
+});
+
 test('every published respawn is listed, including the collected Verteron cube', () => {
   const data = JSON.parse(fs.readFileSync(path.join(__dirname, '../src/CubeRadar.Cli/wwwroot/maps/spawns.json'), 'utf8'));
   assert.equal(data.zones.verteron.length, 1440);
   assert.equal(data.zones.altgard.length, 1371);
+  assert.equal(data.zones.eltnen.length, 912);
+  assert.equal(data.zones.morheim.length, 910);
+  assert.equal(data.zones['reshanta-lower'], undefined);
   assert.ok(data.zones.verteron.some(([x, y]) => Math.hypot(x - 70962, y - 99276) < 2));
 });
 

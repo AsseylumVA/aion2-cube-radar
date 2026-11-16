@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Net.WebSockets;
 using System.Text.Json;
+using CubeRadar.Core.Audio;
 using CubeRadar.Core.Capture;
 using CubeRadar.Core.Dump;
 using CubeRadar.Core.Protocol;
@@ -191,6 +192,11 @@ internal static class RadarCommand
                 (c.CreatedMs > 0 ? $" · exists for {Math.Max(0, (c.FirstSeenMs - c.CreatedMs) / 1000)} s" : ""));
             if (beep && settings.SoundEnabled) PlayCubeSound();
             hub.Kick();
+        };
+        engine.EnemyAppeared += () =>
+        {
+            if (beep && settings.SoundEnabled && !CubeSound.PlayGenerated(WavVolume.EnemyAlert(settings.SoundVolumePct)))
+                Log("enemy alert: no sound output device");
         };
         engine.CubeChanged += c =>
         {

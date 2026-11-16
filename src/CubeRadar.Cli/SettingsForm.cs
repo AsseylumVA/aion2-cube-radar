@@ -198,6 +198,15 @@ internal sealed class SettingsForm : Form
 
         // ---- overlay look
         Section("settings.overlaySection");
+        var mapCubes = Check("settings.showMapCubes", settings.ShowMapCubes);
+        mapCubes.CheckedChanged += (_, _) => { settings.ShowMapCubes = mapCubes.Checked; Save(); };
+        Full(mapCubes);
+        var flightRings = Check("settings.showFlightRings", settings.ShowFlightRings);
+        flightRings.CheckedChanged += (_, _) => { settings.ShowFlightRings = flightRings.Checked; Save(); };
+        Full(flightRings);
+        var kibelisks = Check("settings.showKibelisks", settings.ShowKibelisks);
+        kibelisks.CheckedChanged += (_, _) => { settings.ShowKibelisks = kibelisks.Checked; Save(); };
+        Full(kibelisks);
         var range = Combo();
         range.Items.AddRange(OverlayWindow.Ranges.Select(r => $"{r} m").Cast<object>().ToArray());
         range.SelectedIndex = Math.Max(0, Array.IndexOf(OverlayWindow.Ranges, settings.OverlayRangeM));

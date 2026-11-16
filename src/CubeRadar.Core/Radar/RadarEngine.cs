@@ -102,6 +102,9 @@ public sealed partial class RadarEngine
     public event Action<CubeState>? CubeChanged;
     public event Action<CubeTemplate>? TemplateLearned;
 
+    /// <summary>Raised when the number of identified enemies goes from zero to one or more.</summary>
+    public event Action? EnemyAppeared;
+
     public uint? SelfId { get; private set; }
     public PositionFix? SelfFix { get; private set; }
     public long SelfFixMs { get; private set; }

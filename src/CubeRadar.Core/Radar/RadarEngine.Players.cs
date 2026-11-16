@@ -7,6 +7,7 @@ public sealed partial class RadarEngine
     private readonly Dictionary<uint, TrackedPlayer> _players = new();
     private PlayerFaction _configuredFaction;
     private PlayerFaction _detectedFaction;
+    private int _knownEnemies;
     private PlayerFaction EffectiveOwnFaction => _configuredFaction != PlayerFaction.Unknown ? _configuredFaction : _detectedFaction;
 
     private sealed class TrackedPlayer(PlayerIdentity identity, long t)
@@ -28,15 +29,27 @@ public sealed partial class RadarEngine
             "asmodian" => PlayerFaction.Asmodian,
             _ => throw new FormatException("Eigene Fraktion: Auto, Elyos oder Asmodian wählen."),
         };
-        lock (_gate) _configuredFaction = parsed;
+        lock (_gate)
+        {
+            _configuredFaction = parsed;
+            ObserveEnemies(LastPacketMs);
+        }
     }
 
     private void OnSelfIdentity(ReadOnlySpan<byte> body)
     {
-        if (PlayerMessages.TryParseIdentity(body, isSelf: true, out var identity)) _detectedFaction = identity.Faction;
+        if (PlayerMessages.TryParseIdentity(body, isSelf: true, out var identity))
+        {
+            _detectedFaction = identity.Faction;
+            if (_configuredFaction == PlayerFaction.Unknown) ObserveEnemies(LastPacketMs);
+        }
     }
 
-    private void ClearPlayerContacts() => _players.Clear();
+    private void ClearPlayerContacts()
+    {
+        _players.Clear();
+        _knownEnemies = 0;
+    }
 
     private void OnPlayerRecord(RecordKind kind, long t, ReadOnlySpan<byte> body)
     {
@@ -68,6 +81,7 @@ public sealed partial class RadarEngine
                 if (Wire.TryVarint(body, ref o, out var victim) && body.Length >= o + 5) _players.Remove(victim);
                 break;
         }
+        if (kind is RecordKind.PlayerInfo or RecordKind.PlayerRemoved or RecordKind.PlayerKilled) ObserveEnemies(t);
     }
 
     private void UpdatePlayerPosition(PositionFix fix, long t)
@@ -83,13 +97,16 @@ public sealed partial class RadarEngine
         // Bounded memory after packet loss. A stale last-known position is explicitly flagged, not shown as live.
         foreach (var id in _players.Where(kv => now - kv.Value.LastSeenMs > 120_000).Select(kv => kv.Key).ToList())
             _players.Remove(id);
+        ObserveEnemies(now);
         var own = EffectiveOwnFaction;
         var ownEstimated = SelfFix is null || now - SelfFixMs > _cfg.FixFreshSeconds * 1000 ||
                            (Ring is { } ring && ring.TimeMs > SelfFixMs);
         return _players.Values.Where(p => p.Identity.EntityId != SelfId).Select(p =>
         {
             var i = p.Identity;
-            bool? enemy = own == PlayerFaction.Unknown || i.Faction == PlayerFaction.Unknown ? null : own != i.Faction;
+            bool? enemy = i.Hostile == true ? true
+                : own == PlayerFaction.Unknown || i.Faction == PlayerFaction.Unknown ? null
+                : own != i.Faction;
             var pos = p.Position;
             double? distance = pos is { } f && ox is { } x && oy is { } y
                 ? Units.Planar(x, y, f.X, f.Y) / Units.PerMetre : null;
@@ -103,6 +120,28 @@ public sealed partial class RadarEngine
                 pos is { } z ? z.Z - oz : null);
         }).OrderBy(p => p.IsEnemy == true ? 0 : p.IsEnemy is null ? 1 : 2)
           .ThenBy(p => p.DistanceM ?? double.MaxValue).ToList();
+    }
+
+    /// <summary>One alert when the view goes from no identified enemy to at least one. A further enemy while one is
+    /// already shown does not alert again. Contacts quiet for 120 s no longer count.</summary>
+    private void ObserveEnemies(long now)
+    {
+        var n = 0;
+        foreach (var p in _players.Values)
+        {
+            if (p.Identity.EntityId == SelfId || now - p.LastSeenMs > 120_000) continue;
+            if (IsEnemy(p.Identity)) n++;
+        }
+        var previous = _knownEnemies;
+        _knownEnemies = n;
+        if (previous == 0 && n > 0) EnemyAppeared?.Invoke();
+    }
+
+    private bool IsEnemy(PlayerIdentity i)
+    {
+        if (i.Hostile == true) return true;
+        var own = EffectiveOwnFaction;
+        return own != PlayerFaction.Unknown && i.Faction != PlayerFaction.Unknown && own != i.Faction;
     }
 }
 
