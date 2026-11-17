@@ -693,7 +693,7 @@ internal static class Palette
 /// <summary>Draws the mini radar; also used to render a PNG for checking the layout.</summary>
 internal static class OverlayRenderer
 {
-    private const float Side = 230, Header = 30, Margin = 16;
+    private const float Side = 230, Margin = 16;
     private const double SendRadiusM = 100;
     /// <summary>Title plus one row. Three rows fill <see cref="EnemyFooterMax"/>, the previous fixed list.</summary>
     private const float EnemyListHead = 30, EnemyRow = 34, EnemyFooterMax = 132;
@@ -715,7 +715,7 @@ internal static class OverlayRenderer
     }
 
     public static Size Measure(float scale, bool showEnemies = true, int enemyCount = 0) =>
-        new((int)(Side * scale), (int)((Side + Header + ListHeight(showEnemies, enemyCount)) * scale));
+        new((int)(Side * scale), (int)((Side + ListHeight(showEnemies, enemyCount)) * scale));
 
     /// <summary>
     /// "Segoe UI Semibold" is its own family. <see cref="FontStyle"/> has no semibold, and Bold on that family
@@ -745,17 +745,19 @@ internal static class OverlayRenderer
         return new SizeF(size.Width / scale, size.Height / scale);
     }
 
-    /// <summary>The settings button in the header, in client pixels. Matches <see cref="GearBox"/>.</summary>
+    /// <summary>The settings button in the map's bottom-right corner, in client pixels. Matches <see cref="GearBox"/>.</summary>
     public static Rectangle GearRect(float scale)
     {
         var box = GearBox();
         return Rectangle.Round(new RectangleF(box.X * scale, box.Y * scale, box.Width * scale, box.Height * scale));
     }
 
+    /// <summary>Bottom-right of the radar square, outside the ring and above the enemy list.</summary>
     private static RectangleF GearBox()
     {
         const float size = 22f;
-        return new RectangleF(Side - 8f - size, (Header - size) / 2f, size, size);
+        const float pad = 8f;
+        return new RectangleF(Side - pad - size, Side - pad - size, size, size);
     }
 
     public static void Render(Graphics g, Size size, RadarSnapshot? s, float scale, int rangeM, bool showEnemies = true,
@@ -776,7 +778,7 @@ internal static class OverlayRenderer
         using var tiny = Medium(9f, scale);
         using var rankFont = Medium(9f, scale);
 
-        var totalH = Side + Header + ListHeight(showEnemies, EnemyCount(s));
+        var totalH = Side + ListHeight(showEnemies, EnemyCount(s));
         var radius = SettingsChrome.Radius(chrome);
         var panel = new RectangleF(0.5f, 0.5f, Side - 1f, totalH - 1f);
         using (var plate = SettingsChrome.Round(panel, radius))
@@ -787,10 +789,9 @@ internal static class OverlayRenderer
             g.SetClip(plate);
 
         var me = Me(s);
-        DrawHeader(g, s, me, rangeM, small, strong);
 
-        var cx = Side / 2;
-        var cy = Header + Side / 2;
+        var cx = Side / 2f;
+        var cy = Side / 2f;
         var r = Side / 2 - Margin;
         var px2world = r / (rangeM * 100f); // pixels per game unit
         DrawWash(g, cx, cy, r);
@@ -835,6 +836,7 @@ internal static class OverlayRenderer
             var messageY = send > 16f && wide ? cy + send + 8f : cy - 8f;
             Text(g, message, strong, Palette.Text, cx, messageY, center: true, halo: true);
             if (s is not null) Text(g, UiText.T("overlay.buffHint"), tiny, Palette.Muted, cx, messageY + 18f, center: true, halo: true);
+            DrawMapChrome(g, s, me, small);
             g.Restore(clipped);
             DrawFrame(g, panel, radius);
             return;
@@ -849,8 +851,8 @@ internal static class OverlayRenderer
             return new PointF(cx + (float)(e * px2world), cy - (float)(n * px2world));
         }
 
-        // Zone picture, the whole square under the header. Static web-map marks (cube spots, flight rings) sit under the rings.
-        var mapArea = new RectangleF(1, Header, Side - 2, Side);
+        // Zone picture, the whole radar square. Static web-map marks (cube spots, flight rings) sit under the rings.
+        var mapArea = new RectangleF(1, 1, Side - 2, Side - 2);
         OverlayMap.Draw(g, s, me.X, me.Y, ToScreen, mapArea, nudges);
         OverlayMap.DrawMarks(g, s, ToScreen, new PointF(cx, cy), r, showMapCubes, showFlightRings, showKibelisks);
         Rings();
@@ -973,7 +975,7 @@ internal static class OverlayRenderer
                 var text = $"{name} {(p.DistanceEstimated ? "~" : "")}{p.DistanceM:0}m";
                 var width = MeasureLogical(g, text, tiny).Width;
                 var x = Math.Clamp(q.X + markerRadius + 4, 3, Math.Max(3, Side - width - 3));
-                var y = Math.Clamp(q.Y - 24, Header + 1, Header + Side - 14);
+                var y = Math.Clamp(q.Y - 24, 1, GearBox().Y - 16);
                 var bounds = new RectangleF(x - 2, y - 1, width + 4, 14);
                 if (!placed.Any(other => other.IntersectsWith(bounds)))
                 {
@@ -1010,6 +1012,7 @@ internal static class OverlayRenderer
             }
             EnemyList(g, s, strong, tiny);
         }
+        DrawMapChrome(g, s, me, small);
         g.Restore(clipped);
         DrawFrame(g, panel, radius);
     }
@@ -1019,7 +1022,7 @@ internal static class OverlayRenderer
         var enemies = s?.Players.Where(p => p.IsEnemy == true).ToList() ?? [];
         if (enemies.Count == 0) return;
 
-        var top = Side + Header;
+        var top = Side;
         using var line = new Pen(Color.FromArgb(140, Palette.Line), 1f);
         g.DrawLine(line, 12, top + 0.5f, Side - 12, top + 0.5f);
         Text(g, UiText.T("overlay.enemies", enemies.Count), title, Palette.Text, 12, top + 8);
@@ -1059,7 +1062,7 @@ internal static class OverlayRenderer
     /// </summary>
     public static void ApplyOpacity(Bitmap frame, float scale, int radarPct, int listPct)
     {
-        var listTop = (int)Math.Round((Side + Header) * scale);
+        var listTop = (int)Math.Round(Side * scale);
         var data = frame.LockBits(new Rectangle(Point.Empty, frame.Size), ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);
         try
         {
@@ -1184,12 +1187,9 @@ internal static class OverlayRenderer
         g.Restore(state);
     }
 
-    private static void DrawHeader(Graphics g, RadarSnapshot? s, MeView? me, int rangeM, Font font, Font strong)
+    /// <summary>Gear in the map's bottom-right corner; freshness dot and age in the bottom-left. No header strip.</summary>
+    private static void DrawMapChrome(Graphics g, RadarSnapshot? s, MeView? me, Font font)
     {
-        var rangeText = $"{rangeM} m";
-        var rangeSize = MeasureLogical(g, rangeText, strong);
-        Text(g, rangeText, strong, Palette.Text, 10, (Header - rangeSize.Height) / 2f);
-
         var gear = GearBox();
         var saved = g.Save();
         g.TranslateTransform(gear.X, gear.Y);
@@ -1198,20 +1198,19 @@ internal static class OverlayRenderer
         g.Restore(saved);
         DrawSettings(g, gear, Palette.Text);
 
-        if (s is null) return;
         var (posText, posColor) = me switch
         {
             { Ring: > 0 } m => (UiText.T("overlay.posRing", Math.Round(m.Ring / 100)), Palette.OutOfView),
-            { } m => (UiText.T("overlay.posAge", m.AgeMs / 1000), m.AgeMs <= s.FixFreshSeconds * 1000 ? Palette.Visible : m.AgeMs <= 30_000 ? Palette.OutOfView : Palette.Warn),
-            null => (UiText.T("overlay.posUnknown"), Palette.Warn),
+            { } m when s is not null => (UiText.T("overlay.posAge", m.AgeMs / 1000), m.AgeMs <= s.FixFreshSeconds * 1000 ? Palette.Visible : m.AgeMs <= 30_000 ? Palette.OutOfView : Palette.Warn),
+            _ => ("?", Palette.Warn),
         };
         var textSize = MeasureLogical(g, posText, font);
-        var left = 10 + rangeSize.Width + 8;
-        var right = gear.X - 6;
-        var x = left + Math.Max(0, (right - left - textSize.Width - 12) / 2f) + 12;
+        var mid = gear.Y + gear.Height / 2f;
+        const float dotSize = 6f;
+        const float x = 10f;
         using var dot = new SolidBrush(posColor);
-        g.FillEllipse(dot, x - 12, (Header - 6f) / 2f, 6, 6);
-        Text(g, posText, font, Palette.Muted, x, (Header - textSize.Height) / 2f);
+        g.FillEllipse(dot, x, mid - dotSize / 2f, dotSize, dotSize);
+        Text(g, posText, font, Palette.Muted, x + dotSize + 4f, mid - textSize.Height / 2f);
     }
 
     private static void DrawWash(Graphics g, float cx, float cy, float radius)
