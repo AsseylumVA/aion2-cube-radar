@@ -771,7 +771,6 @@ internal static class OverlayRenderer
                 g.DrawLine(tick, cx + r, cy, cx + r - len, cy);
             }
             Text(g, $"{rangeM / 2} m", tiny, Palette.Muted, cx + 6, cy - r / 2 - 12, halo: true);
-            Text(g, UiText.T("overlay.north"), strong, Palette.Text, cx, cy - r + 3, center: true, halo: true);
             // The 100 m send ring stays a brighter blue dash, not the gray range rings.
             if (SendRadiusM < rangeM)
             {
