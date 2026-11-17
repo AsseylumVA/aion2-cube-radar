@@ -404,24 +404,44 @@ internal static class ArrowRenderer
         {
             var main = d < HereMetres ? UiText.T("arrow.here") : $"{d:0} m";
             var height = f.HeightM is { } h && Math.Abs(h) > LevelMetres ? (h > 0 ? $"▲{h:0}" : $"▼{-h:0}") : null;
-            using var big = Medium(15f);
-            using var mid = Medium(10.5f);
-            var mainWidth = g.MeasureString(main, big).Width;
-            var heightWidth = height is null ? 0 : g.MeasureString(height, mid).Width;
+            using var big = Medium(15f, scale);
+            using var mid = Medium(10.5f, scale);
+            var mainWidth = MeasureLogical(g, main, big).Width;
+            var heightWidth = height is null ? 0 : MeasureLogical(g, height, mid).Width;
             var x = Cx - (mainWidth + heightWidth) / 2;
             Outlined(g, main, big, color, x, 136);
             if (height is not null) Outlined(g, height, mid, color, x + mainWidth - 4, 143);
         }
         if (f.Note is { } note)
         {
-            using var small = Medium(9f);
-            Outlined(g, note, small, f.Unsure || f.AngleDeg is null ? Palette.OutOfView : Palette.Text, Cx - g.MeasureString(note, small).Width / 2, 168);
+            using var small = Medium(9f, scale);
+            Outlined(g, note, small, f.Unsure || f.AngleDeg is null ? Palette.OutOfView : Palette.Text, Cx - MeasureLogical(g, note, small).Width / 2, 168);
         }
     }
 
-    /// <summary>Segoe UI Semibold, same face as the radar. Bold on that family synthesizes a heavier stroke.</summary>
-    private static Font Medium(float points) =>
-        new("Segoe UI Semibold", points, FontStyle.Regular, GraphicsUnit.Point);
+    /// <summary>
+    /// Segoe UI Semibold at the final pixel size. Same face as the radar. Bold on that family synthesizes a heavier stroke.
+    /// A world scale must not stretch these glyphs: the outline is drawn in device pixels.
+    /// </summary>
+    private static Font Medium(float points, float scale) =>
+        new("Segoe UI Semibold", points * scale * 96f / 72f, FontStyle.Regular, GraphicsUnit.Pixel);
+
+    private static float DeviceScale(Graphics g)
+    {
+        var e = g.Transform.Elements;
+        var s = MathF.Sqrt(e[0] * e[0] + e[1] * e[1]);
+        return s < 0.01f ? 1f : s;
+    }
+
+    private static SizeF MeasureLogical(Graphics g, string text, Font font)
+    {
+        var scale = DeviceScale(g);
+        var state = g.Save();
+        g.ResetTransform();
+        var size = g.MeasureString(text, font);
+        g.Restore(state);
+        return new SizeF(size.Width / scale, size.Height / scale);
+    }
 
     private static PointF Project(double u, double v, double angleDeg, float lift = 0)
     {
@@ -488,19 +508,31 @@ internal static class ArrowRenderer
     {
         using var ring = new Pen(Color.FromArgb(200, Palette.Muted), 3);
         g.DrawEllipse(ring, Cx - 26, Cy - 26, 52, 52);
-        using var font = Medium(18f);
-        Outlined(g, "?", font, Palette.Muted, Cx - g.MeasureString("?", font).Width / 2, Cy - 20);
+        using var font = Medium(18f, DeviceScale(g));
+        Outlined(g, "?", font, Palette.Muted, Cx - MeasureLogical(g, "?", font).Width / 2, Cy - 20);
     }
 
-    /// <summary>Text with a dark outline, readable on any background.</summary>
+    /// <summary>
+    /// Text with a dark outline, readable on any background. The path is built at the final pixel size and filled
+    /// without a world scale, so a scale change does not stretch a 96 DPI outline. Grayscale anti-alias: ClearType
+    /// fringes tear on the premultiplied layered window.
+    /// </summary>
     private static void Outlined(Graphics g, string text, Font font, Color color, float x, float y)
     {
+        var scale = DeviceScale(g);
+        var origin = new[] { new PointF(x, y) };
+        g.TransformPoints(CoordinateSpace.Device, CoordinateSpace.World, origin);
+        var state = g.Save();
+        g.ResetTransform();
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.TextRenderingHint = TextRenderingHint.AntiAlias;
         using var path = new GraphicsPath();
-        path.AddString(text, font.FontFamily, (int)font.Style, g.DpiY * font.SizeInPoints / 72, new PointF(x, y), StringFormat.GenericTypographic);
-        using var outline = new Pen(Color.FromArgb(210, 8, 12, 16), 3.5f) { LineJoin = LineJoin.Round };
+        path.AddString(text, font.FontFamily, (int)font.Style, font.Size, origin[0], StringFormat.GenericTypographic);
+        using var outline = new Pen(Color.FromArgb(210, 8, 12, 16), 3.5f * scale) { LineJoin = LineJoin.Round };
         g.DrawPath(outline, path);
         using var fill = new SolidBrush(color);
         g.FillPath(fill, path);
+        g.Restore(state);
     }
 
     private static Color Shade(Color c, double f) => Color.FromArgb((int)(c.R * f), (int)(c.G * f), (int)(c.B * f));

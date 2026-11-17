@@ -697,10 +697,31 @@ internal static class OverlayRenderer
 
     /// <summary>
     /// "Segoe UI Semibold" is its own family. <see cref="FontStyle"/> has no semibold, and Bold on that family
-    /// synthesizes a heavier face.
+    /// synthesizes a heavier face. <paramref name="points"/> is the size at 100% on a 96 DPI screen;
+    /// <paramref name="scale"/> is monitor DPI times the user's overlay scale, so the glyph bitmap is already
+    /// the final pixel size. Drawing that font under <see cref="Graphics.ScaleTransform"/> would stretch it.
     /// </summary>
-    private static Font Medium(float points) =>
-        new("Segoe UI Semibold", points, FontStyle.Regular, GraphicsUnit.Point);
+    private static Font Medium(float points, float scale) =>
+        new("Segoe UI Semibold", points * scale * 96f / 72f, FontStyle.Regular, GraphicsUnit.Pixel);
+
+    /// <summary>Uniform scale of the current world transform (1 when the transform is identity).</summary>
+    private static float DeviceScale(Graphics g)
+    {
+        var e = g.Transform.Elements;
+        var s = MathF.Sqrt(e[0] * e[0] + e[1] * e[1]);
+        return s < 0.01f ? 1f : s;
+    }
+
+    /// <summary>String size in logical overlay units, so layout stays in the unscaled coordinate system.</summary>
+    private static SizeF MeasureLogical(Graphics g, string text, Font font)
+    {
+        var scale = DeviceScale(g);
+        var state = g.Save();
+        g.ResetTransform();
+        var size = g.MeasureString(text, font);
+        g.Restore(state);
+        return new SizeF(size.Width / scale, size.Height / scale);
+    }
 
     /// <summary>The settings button in the header, in client pixels. Matches <see cref="GearBox"/>.</summary>
     public static Rectangle GearRect(float scale)
@@ -725,14 +746,16 @@ internal static class OverlayRenderer
         g.ScaleTransform(scale, scale);
 
         // Segoe UI Semibold: Regular was hairline over the game, Bold too heavy. FontStyle has no Semibold.
-        using var small = Medium(9.5f);
-        using var strong = Medium(9.5f);
-        using var label = Medium(9f);
-        using var tiny = Medium(9f);
-        using var rankFont = Medium(9f);
+        // Point size is the 100% size; the font itself is built at scale so a scale change is a new raster, not a stretch.
+        using var chrome = Medium(9.5f, 1f);
+        using var small = Medium(9.5f, scale);
+        using var strong = Medium(9.5f, scale);
+        using var label = Medium(9f, scale);
+        using var tiny = Medium(9f, scale);
+        using var rankFont = Medium(9f, scale);
 
         var totalH = Side + Header + (showEnemies ? EnemyFooter : 0f);
-        var radius = SettingsChrome.Radius(small);
+        var radius = SettingsChrome.Radius(chrome);
         var panel = new RectangleF(0.5f, 0.5f, Side - 1f, totalH - 1f);
         using (var plate = SettingsChrome.Round(panel, radius))
         using (var bg = new SolidBrush(Palette.Background))
@@ -786,7 +809,7 @@ internal static class OverlayRenderer
             if (showEnemies) EnemyList(g, s, strong, tiny);
             var message = s is null ? UiText.T("overlay.waiting") : UiText.T("overlay.noPosition");
             var send = SendRadiusM < rangeM ? (float)(SendRadiusM * 100 * px2world) : 0f;
-            var wide = g.MeasureString(message, strong).Width > Math.Max(24f, send * 1.5f);
+            var wide = MeasureLogical(g, message, strong).Width > Math.Max(24f, send * 1.5f);
             var messageY = send > 16f && wide ? cy + send + 8f : cy - 8f;
             Text(g, message, strong, Palette.Text, cx, messageY, center: true, halo: true);
             if (s is not null) Text(g, UiText.T("overlay.buffHint"), tiny, Palette.Muted, cx, messageY + 18f, center: true, halo: true);
@@ -859,7 +882,7 @@ internal static class OverlayRenderer
             if (Inside(p, cx, cy, r - 4))
             {
                 Marker(g, p.X, p.Y, 6.5f, height.Kind, color, filled: c.Status != nameof(CubeStatus.OutOfView));
-                var measured = g.MeasureString(text, label);
+                var measured = MeasureLogical(g, text, label);
                 var lx = p.X + 10;
                 if (lx + measured.Width > Side - 8) lx = p.X - 10 - measured.Width;
                 var labelBounds = new RectangleF(lx - 1, p.Y - 9, measured.Width + 2, measured.Height);
@@ -925,7 +948,7 @@ internal static class OverlayRenderer
                 markers.Add((q, p));
                 var name = p.Name.Length > 9 ? p.Name[..9] + "…" : p.Name;
                 var text = $"{name} {(p.DistanceEstimated ? "~" : "")}{p.DistanceM:0}m";
-                var width = g.MeasureString(text, tiny).Width;
+                var width = MeasureLogical(g, text, tiny).Width;
                 var x = Math.Clamp(q.X + markerRadius + 4, 3, Math.Max(3, Side - width - 3));
                 var y = Math.Clamp(q.Y - 24, Header + 1, Header + Side - 14);
                 var bounds = new RectangleF(x - 2, y - 1, width + 4, 14);
@@ -948,7 +971,7 @@ internal static class OverlayRenderer
                     new(q.X, q.Y + markerRadius), new(q.X - markerRadius, q.Y)];
                 g.FillPolygon(red, diamond);
                 g.DrawPolygon(edge, diamond);
-                g.DrawString(marker.Player.RankSymbol, rankFont, ink,
+                TextIn(g, marker.Player.RankSymbol, rankFont, ink,
                     new RectangleF(q.X - markerRadius, q.Y - markerRadius + 0.5f, 2 * markerRadius, 2 * markerRadius), centered);
             }
             EnemyList(g, s, strong, tiny);
@@ -1068,33 +1091,61 @@ internal static class OverlayRenderer
         }
     }
 
+    /// <summary>
+    /// Draws in device pixels. The world scale would otherwise rasterize the glyphs at 96 DPI and stretch that bitmap,
+    /// which tears the stems. Grayscale anti-alias only: ClearType fringes break on the premultiplied layered window.
+    /// </summary>
     private static void Text(Graphics g, string text, Font font, Color color, float x, float y, bool right = false, bool center = false, bool halo = false)
     {
+        var scale = DeviceScale(g);
+        var origin = new[] { new PointF(x, y) };
+        g.TransformPoints(CoordinateSpace.Device, CoordinateSpace.World, origin);
+        var state = g.Save();
+        g.ResetTransform();
+        g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
         var w = g.MeasureString(text, font).Width;
-        if (right) x -= w;
-        else if (center) x -= w / 2;
+        var dx = origin[0].X;
+        var dy = origin[0].Y;
+        if (right) dx -= w;
+        else if (center) dx -= w / 2f;
+        dx = MathF.Round(dx);
+        dy = MathF.Round(dy);
         if (halo)
         {
             using var shadow = new SolidBrush(Color.FromArgb(220, Palette.Ink));
-            g.DrawString(text, font, shadow, x - 1f, y);
-            g.DrawString(text, font, shadow, x + 1f, y);
-            g.DrawString(text, font, shadow, x, y - 1f);
-            g.DrawString(text, font, shadow, x, y + 1f);
+            g.DrawString(text, font, shadow, dx - scale, dy);
+            g.DrawString(text, font, shadow, dx + scale, dy);
+            g.DrawString(text, font, shadow, dx, dy - scale);
+            g.DrawString(text, font, shadow, dx, dy + scale);
         }
         using var brush = new SolidBrush(color);
-        g.DrawString(text, font, brush, x, y);
+        g.DrawString(text, font, brush, dx, dy);
+        g.Restore(state);
+    }
+
+    /// <summary>Centered mark inside a logical rectangle, rasterized at the rectangle's device size.</summary>
+    private static void TextIn(Graphics g, string text, Font font, Brush brush, RectangleF world, StringFormat format)
+    {
+        var pts = new[] { new PointF(world.Left, world.Top), new PointF(world.Right, world.Bottom) };
+        g.TransformPoints(CoordinateSpace.Device, CoordinateSpace.World, pts);
+        var state = g.Save();
+        g.ResetTransform();
+        g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+        g.DrawString(text, font, brush, RectangleF.FromLTRB(pts[0].X, pts[0].Y, pts[1].X, pts[1].Y), format);
+        g.Restore(state);
     }
 
     private static void DrawHeader(Graphics g, RadarSnapshot? s, MeView? me, int rangeM, Font font, Font strong)
     {
         var rangeText = $"{rangeM} m";
-        var rangeSize = g.MeasureString(rangeText, strong);
+        var rangeSize = MeasureLogical(g, rangeText, strong);
         Text(g, rangeText, strong, Palette.Text, 10, (Header - rangeSize.Height) / 2f);
 
         var gear = GearBox();
         var saved = g.Save();
         g.TranslateTransform(gear.X, gear.Y);
-        SettingsChrome.PaintField(g, new Rectangle(0, 0, (int)gear.Width, (int)gear.Height), strong, hover: false, pressed: false, focused: false, enabled: true);
+        using (var chrome = Medium(9.5f, 1f))
+            SettingsChrome.PaintField(g, new Rectangle(0, 0, (int)gear.Width, (int)gear.Height), chrome, hover: false, pressed: false, focused: false, enabled: true);
         g.Restore(saved);
         DrawSettings(g, gear, Palette.Text);
 
@@ -1105,7 +1156,7 @@ internal static class OverlayRenderer
             { } m => (UiText.T("overlay.posAge", m.AgeMs / 1000), m.AgeMs <= s.FixFreshSeconds * 1000 ? Palette.Visible : m.AgeMs <= 30_000 ? Palette.OutOfView : Palette.Warn),
             null => (UiText.T("overlay.posUnknown"), Palette.Warn),
         };
-        var textSize = g.MeasureString(posText, font);
+        var textSize = MeasureLogical(g, posText, font);
         var left = 10 + rangeSize.Width + 8;
         var right = gear.X - 6;
         var x = left + Math.Max(0, (right - left - textSize.Width - 12) / 2f) + 12;
