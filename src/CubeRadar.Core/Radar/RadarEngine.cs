@@ -568,6 +568,7 @@ public sealed partial class RadarEngine
                 Players = PlayerViews(now, ox, oy, oz),
                 OwnFaction = EffectiveOwnFaction.ToString(),
                 FactionSetting = _configuredFaction == PlayerFaction.Unknown ? "Auto" : _configuredFaction.ToString(),
+                KnownMap = MapId is int map && _cfg.MapZones.ContainsKey(map),
             };
         }
     }
@@ -611,4 +612,6 @@ public sealed record RadarSnapshot(long NowMs, uint? SelfId, int? MapId, string?
     public List<PlayerView> Players { get; init; } = [];
     public string OwnFaction { get; init; } = "Unknown";
     public string FactionSetting { get; init; } = "Auto";
+    /// <summary>True when <see cref="MapId"/> is an open-world map from the catalog. A dungeon world id is stored, but this stays false.</summary>
+    public bool KnownMap { get; init; }
 }

@@ -473,9 +473,9 @@ internal sealed class OverlayWindow : Form
 
     private void Tick()
     {
+        _last = _snapshot(); // refreshed even while hidden, so leaving a dungeon can show the overlay again
         UpdateVisibility();
         if (!Visible && !_arrow.Visible) return;
-        _last = _snapshot(); // the arrow draws from this one too
         // Some games push themselves to the top when they regain focus: re-assert every 2 s.
         if (++_ticks % 13 == 0)
         {
@@ -500,7 +500,7 @@ internal sealed class OverlayWindow : Form
         {
             _last = _snapshot();
             Redraw(); // the content must be there before the window shows
-            Show(); // without activation (ShowWithoutActivation)
+            Show(); // ShowWithoutActivation: coming back from a dungeon must not take focus from the game
         }
         else Hide();
     }
@@ -509,6 +509,7 @@ internal sealed class OverlayWindow : Form
     private bool WantedOverGame()
     {
         if (SettingsOpen) return true; // the user is adjusting it: keep it visible to drag and zoom
+        if (_last?.KnownMap != true) return false; // no catalog map yet, or a dungeon world id
         var now = Environment.TickCount64;
         if (now - _gamePidsAt > 5_000)
         {
