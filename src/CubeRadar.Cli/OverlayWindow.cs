@@ -167,6 +167,10 @@ internal sealed class OverlayWindow : Form
 
     private float ScaleFor(int dpi) => dpi / 96f * Math.Clamp(_settings.OverlayScalePct, 50, 200) / 100f;
 
+    /// <summary>Window size for the current snapshot: no enemy list until someone is actually listed.</summary>
+    private Size OverlaySize(float scale) =>
+        OverlayRenderer.Measure(scale, _settings.ShowEnemies, OverlayRenderer.EnemyCount(_last));
+
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
@@ -179,7 +183,7 @@ internal sealed class OverlayWindow : Form
     /// </summary>
     protected override bool OnGetDpiScaledSize(int deviceDpiOld, int deviceDpiNew, ref Size desiredSize)
     {
-        desiredSize = OverlayRenderer.Measure(ScaleFor(deviceDpiNew), _settings.ShowEnemies);
+        desiredSize = OverlaySize(ScaleFor(deviceDpiNew));
         return true;
     }
 
@@ -205,7 +209,7 @@ internal sealed class OverlayWindow : Form
     /// <summary>Re-reads size and opacity (called after every change in the settings window).</summary>
     public void ApplySettings()
     {
-        var size = OverlayRenderer.Measure(RenderScale, _settings.ShowEnemies);
+        var size = OverlaySize(RenderScale);
         if (Size != size) Size = size;
         foreach (var (item, mode) in _modeItems) item.Checked = mode == _settings.OverlayMode;
         if (IsHandleCreated) UpdateVisibility(); // not from the constructor: the window is not placed yet
@@ -230,7 +234,7 @@ internal sealed class OverlayWindow : Form
     private void Redraw()
     {
         if (!IsHandleCreated) return;
-        var size = OverlayRenderer.Measure(RenderScale, _settings.ShowEnemies);
+        var size = OverlaySize(RenderScale);
         if (size.Width <= 0 || size.Height <= 0) return;
         if (Size != size) Size = size;
         using var frame = new Bitmap(size.Width, size.Height, PixelFormat.Format32bppArgb);
@@ -689,11 +693,29 @@ internal static class Palette
 /// <summary>Draws the mini radar; also used to render a PNG for checking the layout.</summary>
 internal static class OverlayRenderer
 {
-    private const float Side = 230, Header = 36, Margin = 16, EnemyFooter = 132;
+    private const float Side = 230, Header = 30, Margin = 16;
     private const double LevelMetres = 3, SendRadiusM = 100;
+    /// <summary>Title plus one row. Three rows fill <see cref="EnemyFooterMax"/>, the previous fixed list.</summary>
+    private const float EnemyListHead = 30, EnemyRow = 34, EnemyFooterMax = 132;
+    private const int EnemyRowsMax = 3;
 
-    public static Size Measure(float scale, bool showEnemies = true) =>
-        new((int)(Side * scale), (int)((Side + Header + (showEnemies ? EnemyFooter : 0)) * scale));
+    /// <summary>Listed enemies. Zero means the list panel is not drawn.</summary>
+    internal static int EnemyCount(RadarSnapshot? s) =>
+        s is null ? 0 : s.Players.Count(p => p.IsEnemy == true);
+
+    /// <summary>
+    /// Logical height of the enemy list. Hidden when empty. Grows by one row per enemy and stops at the
+    /// previous fixed panel (<see cref="EnemyFooterMax"/>).
+    /// </summary>
+    private static float ListHeight(bool showEnemies, int enemyCount)
+    {
+        if (!showEnemies || enemyCount <= 0) return 0f;
+        var rows = Math.Min(enemyCount, EnemyRowsMax);
+        return Math.Min(EnemyFooterMax, EnemyListHead + rows * EnemyRow);
+    }
+
+    public static Size Measure(float scale, bool showEnemies = true, int enemyCount = 0) =>
+        new((int)(Side * scale), (int)((Side + Header + ListHeight(showEnemies, enemyCount)) * scale));
 
     /// <summary>
     /// "Segoe UI Semibold" is its own family. <see cref="FontStyle"/> has no semibold, and Bold on that family
@@ -754,7 +776,7 @@ internal static class OverlayRenderer
         using var tiny = Medium(9f, scale);
         using var rankFont = Medium(9f, scale);
 
-        var totalH = Side + Header + (showEnemies ? EnemyFooter : 0f);
+        var totalH = Side + Header + ListHeight(showEnemies, EnemyCount(s));
         var radius = SettingsChrome.Radius(chrome);
         var panel = new RectangleF(0.5f, 0.5f, Side - 1f, totalH - 1f);
         using (var plate = SettingsChrome.Round(panel, radius))
@@ -977,25 +999,19 @@ internal static class OverlayRenderer
 
     private static void EnemyList(Graphics g, RadarSnapshot? s, Font title, Font detail)
     {
+        var enemies = s?.Players.Where(p => p.IsEnemy == true).ToList() ?? [];
+        if (enemies.Count == 0) return;
+
         var top = Side + Header;
         using var line = new Pen(Color.FromArgb(140, Palette.Line), 1f);
         g.DrawLine(line, 12, top + 0.5f, Side - 12, top + 0.5f);
-        var enemies = s?.Players.Where(p => p.IsEnemy == true).ToList() ?? [];
         Text(g, UiText.T("overlay.enemies", enemies.Count), title, Palette.Text, 12, top + 8);
-        if (s is null || s.OwnFaction == "Unknown")
-        {
-            Text(g, UiText.T("overlay.pickFaction"), detail, Palette.OutOfView, 12, top + 30);
-            return;
-        }
-        if (enemies.Count == 0)
-        {
-            Text(g, UiText.T("overlay.noEnemies"), detail, Palette.Muted, 12, top + 30);
-            return;
-        }
         var state = g.Save();
-        g.SetClip(new RectangleF(8, top + 28, Side - 16, EnemyFooter - 32));
-        var y = top + 30f;
-        foreach (var p in enemies.Take(3))
+        // The old fixed panel clipped the third row; keep that only once the list is at its maximum.
+        if (enemies.Count >= EnemyRowsMax)
+            g.SetClip(new RectangleF(8, top + 28, Side - 16, EnemyFooterMax - 32));
+        var y = top + EnemyListHead;
+        foreach (var p in enemies.Take(EnemyRowsMax))
         {
             var faction = p.Faction switch
             {
@@ -1012,7 +1028,7 @@ internal static class OverlayRenderer
             if (p.RankCode is not null && !p.RankVerified) rank += " *";
             if (p.PositionStale && p.PositionAgeMs is { } age) rank += UiText.T("overlay.posOld", age / 1000);
             Text(g, rank, detail, Palette.Muted, 18, y + 16);
-            y += 34;
+            y += EnemyRow;
         }
         g.Restore(state);
     }
@@ -1214,7 +1230,7 @@ internal static class OverlayRenderer
     /// <summary>One frame as PNG (for checking the layout without a game).</summary>
     public static void SavePng(string path, RadarSnapshot? s, int rangeM = 120, float scale = 1.5f)
     {
-        var size = Measure(scale);
+        var size = Measure(scale, enemyCount: EnemyCount(s));
         using var bmp = new Bitmap(size.Width, size.Height);
         using (var g = Graphics.FromImage(bmp)) Render(g, size, s, scale, rangeM);
         bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
