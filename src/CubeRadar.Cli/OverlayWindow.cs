@@ -955,7 +955,7 @@ internal static class OverlayRenderer
         }
         if (showEnemies)
         {
-            // Fresh positions only. Red diamonds cannot be mistaken for green square/height cube markers.
+            // Fresh positions only. Red height arrows, not diamonds: up / down like the cube marks, a dash when level.
             const float markerRadius = 10;
             var placed = new List<RectangleF>();
             var markers = new List<(PointF Point, PlayerView Player)>();
@@ -970,9 +970,7 @@ internal static class OverlayRenderer
                 }
                 markers.Add((q, p));
                 var name = p.Name.Length > 9 ? p.Name[..9] + "…" : p.Name;
-                var height = RelativeHeight.Arrow(RelativeHeight.Metres(p.DzUnits));
                 var text = $"{name} {(p.DistanceEstimated ? "~" : "")}{p.DistanceM:0}m";
-                if (height is not null) text += " " + height;
                 var width = MeasureLogical(g, text, tiny).Width;
                 var x = Math.Clamp(q.X + markerRadius + 4, 3, Math.Max(3, Side - width - 3));
                 var y = Math.Clamp(q.Y - 24, Header + 1, Header + Side - 14);
@@ -986,18 +984,29 @@ internal static class OverlayRenderer
             // Paint badges last, nearest on top, so adjacent name labels can never obscure a class glyph.
             using var red = new SolidBrush(Palette.Warn);
             using var ink = new SolidBrush(Palette.Ink);
-            using var edge = new Pen(Color.FromArgb(210, 42, 16, 14), 1.35f) { LineJoin = LineJoin.Round };
             using var centered = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center,
                 FormatFlags = StringFormatFlags.NoWrap };
             foreach (var marker in markers.AsEnumerable().Reverse())
             {
                 var q = marker.Point;
-                PointF[] diamond = [new(q.X, q.Y - markerRadius), new(q.X + markerRadius, q.Y),
-                    new(q.X, q.Y + markerRadius), new(q.X - markerRadius, q.Y)];
-                g.FillPolygon(red, diamond);
-                g.DrawPolygon(edge, diamond);
-                TextIn(g, marker.Player.RankSymbol, rankFont, ink,
-                    new RectangleF(q.X - markerRadius, q.Y - markerRadius + 0.5f, 2 * markerRadius, 2 * markerRadius), centered);
+                var kind = EnemyHeightKind(marker.Player.DzUnits);
+                RectangleF rankBox;
+                Brush rankInk;
+                if (kind == "flat")
+                {
+                    EnemyDash(g, q.X, q.Y, markerRadius);
+                    rankBox = new RectangleF(q.X - markerRadius, q.Y - markerRadius, 2 * markerRadius, markerRadius * 1.15f);
+                    rankInk = red;
+                }
+                else
+                {
+                    Marker(g, q.X, q.Y, markerRadius, kind, Palette.Warn, filled: true);
+                    rankBox = kind == "up"
+                        ? new RectangleF(q.X - markerRadius, q.Y - markerRadius * 0.05f, 2 * markerRadius, markerRadius * 1.15f)
+                        : new RectangleF(q.X - markerRadius, q.Y - markerRadius * 0.95f, 2 * markerRadius, markerRadius * 1.15f);
+                    rankInk = ink;
+                }
+                TextIn(g, marker.Player.RankSymbol, rankFont, rankInk, rankBox, centered);
             }
             EnemyList(g, s, strong, tiny);
         }
@@ -1089,6 +1098,24 @@ internal static class OverlayRenderer
     }
 
     private static bool Inside(PointF p, float cx, float cy, float r) => (p.X - cx) * (p.X - cx) + (p.Y - cy) * (p.Y - cy) <= r * r;
+
+    /// <summary>Above / below the 3 m band, or flat when level or our own height is missing.</summary>
+    private static string EnemyHeightKind(double? dzUnits)
+    {
+        var metres = RelativeHeight.Metres(dzUnits);
+        if (metres is not { } h || Math.Abs(h) <= RelativeHeight.LevelMetres) return "flat";
+        return h > 0 ? "up" : "down";
+    }
+
+    /// <summary>Short horizontal stroke. Not a diamond, and not an up/down arrow.</summary>
+    private static void EnemyDash(Graphics g, float x, float y, float s)
+    {
+        var yLine = y + s * 0.38f;
+        using var shadow = new Pen(Color.FromArgb(210, 42, 16, 14), 4.2f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        using var pen = new Pen(Palette.Warn, 2.5f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        g.DrawLine(shadow, x - s * 0.85f, yLine, x + s * 0.85f, yLine);
+        g.DrawLine(pen, x - s * 0.85f, yLine, x + s * 0.85f, yLine);
+    }
 
     /// <summary>Square for "same height", triangle up / down for above / below us.</summary>
     private static void Marker(Graphics g, float x, float y, float s, string kind, Color color, bool filled)
