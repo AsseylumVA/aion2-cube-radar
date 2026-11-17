@@ -66,7 +66,8 @@ public class PlayerRankVariantFixtureTests
         {
             engine.OnFrame(f.T, f.Op, f.Body);
             var player = Assert.Single(engine.Snapshot().Players, p => p.Name == f.Name);
-            Assert.True(player.IsEnemy);
+            // These captures are rank samples. A hostility byte other than 1 or 2 stays unknown, so the other race is not an enemy.
+            Assert.Null(player.IsEnemy);
             if (f.Name is "EnemyC" or "EnemyEcho" or "EnemyH")
             {
                 Assert.Equal("Sixth-Class Soldier", player.RankName);
