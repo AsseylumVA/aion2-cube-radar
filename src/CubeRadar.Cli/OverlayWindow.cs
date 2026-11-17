@@ -769,8 +769,13 @@ internal static class OverlayRenderer
             }
             Text(g, $"{rangeM / 2} m", tiny, Palette.Muted, cx + 6, cy - r / 2 - 12, halo: true);
             Text(g, UiText.T("overlay.north"), strong, Palette.Text, cx, cy - r + 3, center: true, halo: true);
+            // The 100 m send ring stays a brighter blue dash, not the gray range rings.
             if (SendRadiusM < rangeM)
-                StrokeRing(g, cx, cy, (float)(SendRadiusM * 100 * px2world), Color.FromArgb(140, 150, 190, 224), 1.05f, DashStyle.Dash);
+            {
+                using var send = new Pen(Color.FromArgb(255, 130, 196, 255), 1.25f) { DashStyle = DashStyle.Dash };
+                var sr = (float)(SendRadiusM * 100 * px2world);
+                g.DrawEllipse(send, cx - sr, cy - sr, 2 * sr, 2 * sr);
+            }
         }
 
         if (s is null || me is null)
