@@ -40,3 +40,19 @@ public static class Units
 
     public static double Planar(double x0, double y0, double x1, double y1) => Math.Sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0));
 }
+
+/// <summary>
+/// Vertical difference against the player, with the same marks as the cube arrow.
+/// More than <see cref="LevelMetres"/> above is ▲, the same amount below is ▼; inside that band there is no mark.
+/// </summary>
+public static class RelativeHeight
+{
+    public const double LevelMetres = 3;
+
+    /// <summary>Game units (centimetres) to metres. Null stays null.</summary>
+    public static double? Metres(double? dzUnits) => dzUnits is { } dz ? dz / Units.PerMetre : null;
+
+    /// <summary>▲/▼ and whole metres, or null when the height is unknown or within <see cref="LevelMetres"/>.</summary>
+    public static string? Arrow(double? metres) =>
+        metres is { } h && Math.Abs(h) > LevelMetres ? h > 0 ? $"▲{h:0}" : $"▼{-h:0}" : null;
+}

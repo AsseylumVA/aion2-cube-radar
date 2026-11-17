@@ -365,7 +365,7 @@ internal sealed record ArrowFrame(double? AngleDeg, double? DistanceM, double? H
 internal static class ArrowRenderer
 {
     private const float Width = 240, Height = 200, Cx = 120, Cy = 78, Length = 62, Squash = 0.55f, Thickness = 9;
-    private const double LevelMetres = 3, HereMetres = 4;
+    private const double HereMetres = 4;
 
     // Outline of the arrow lying flat, pointing to +v (ahead); about its middle.
     private static readonly (double U, double V)[] Shape =
@@ -403,7 +403,7 @@ internal static class ArrowRenderer
         if (f.DistanceM is { } d)
         {
             var main = d < HereMetres ? UiText.T("arrow.here") : $"{d:0} m";
-            var height = f.HeightM is { } h && Math.Abs(h) > LevelMetres ? (h > 0 ? $"▲{h:0}" : $"▼{-h:0}") : null;
+            var height = RelativeHeight.Arrow(f.HeightM);
             using var big = Medium(15f, scale);
             using var mid = Medium(10.5f, scale);
             var mainWidth = MeasureLogical(g, main, big).Width;

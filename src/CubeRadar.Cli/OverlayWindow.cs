@@ -694,7 +694,7 @@ internal static class Palette
 internal static class OverlayRenderer
 {
     private const float Side = 230, Header = 30, Margin = 16;
-    private const double LevelMetres = 3, SendRadiusM = 100;
+    private const double SendRadiusM = 100;
     /// <summary>Title plus one row. Three rows fill <see cref="EnemyFooterMax"/>, the previous fixed list.</summary>
     private const float EnemyListHead = 30, EnemyRow = 34, EnemyFooterMax = 132;
     private const int EnemyRowsMax = 3;
@@ -891,9 +891,15 @@ internal static class OverlayRenderer
                 _ => Palette.OutOfView,
             };
             var dist = Math.Sqrt(Math.Pow(c.X - me.X, 2) + Math.Pow(c.Y - me.Y, 2)) / 100;
-            (string Kind, string Text) height = c.DzUnits is { } dz
-                ? Math.Abs(dz / 100) <= LevelMetres ? ("level", "≈") : dz > 0 ? ("up", $"▲{dz / 100:0}") : ("down", $"▼{-dz / 100:0}")
-                : ("level", "");
+            var metres = RelativeHeight.Metres(c.DzUnits);
+            var arrow = RelativeHeight.Arrow(metres);
+            (string Kind, string Text) height = (metres, arrow) switch
+            {
+                (null, _) => ("level", ""),
+                (> 0, { } mark) => ("up", mark),
+                (< 0, { } mark) => ("down", mark),
+                _ => ("level", "≈"),
+            };
             var text = $"{dist:0} m {height.Text}".Trim();
             var p = ToScreen(c.X, c.Y);
             if (Inside(p, cx, cy, r - 4))
@@ -964,7 +970,9 @@ internal static class OverlayRenderer
                 }
                 markers.Add((q, p));
                 var name = p.Name.Length > 9 ? p.Name[..9] + "…" : p.Name;
+                var height = RelativeHeight.Arrow(RelativeHeight.Metres(p.DzUnits));
                 var text = $"{name} {(p.DistanceEstimated ? "~" : "")}{p.DistanceM:0}m";
+                if (height is not null) text += " " + height;
                 var width = MeasureLogical(g, text, tiny).Width;
                 var x = Math.Clamp(q.X + markerRadius + 4, 3, Math.Max(3, Side - width - 3));
                 var y = Math.Clamp(q.Y - 24, Header + 1, Header + Side - 14);
@@ -1019,7 +1027,10 @@ internal static class OverlayRenderer
                 "Asmodian" => UiText.T("faction.asmodian"),
                 _ => UiText.T("faction.unknown"),
             };
-            var distance = p.DistanceM is { } d ? $"{(p.PositionStale || p.DistanceEstimated ? "~" : "")}{d:0} m" : UiText.T("overlay.posUnknown");
+            var height = RelativeHeight.Arrow(RelativeHeight.Metres(p.DzUnits));
+            var distance = p.DistanceM is { } d
+                ? $"{(p.PositionStale || p.DistanceEstimated ? "~" : "")}{d:0} m{(height is null ? "" : " " + height)}"
+                : UiText.T("overlay.posUnknown");
             using var bar = new SolidBrush(p.PositionStale ? Palette.Muted : Palette.Warn);
             g.FillRectangle(bar, 12, y + 3, 2, 24);
             Text(g, $"{p.Name} · {faction} · {distance}", detail, Palette.Warn, 18, y);
