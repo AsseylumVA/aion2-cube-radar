@@ -44,7 +44,7 @@ public class PlayerRadarTests
         var start = Identity("EnemyAlphaA").T - 1000;
         engine.OnFrame(start, 0x3336, [1]); // synthetic self ID; relevant wire fields below are retained in minimised fixtures
         var map = new byte[28];
-        BinaryPrimitives.WriteInt32LittleEndian(map.AsSpan(4), 1110); // listed world map: the other race stays hostile
+        BinaryPrimitives.WriteInt32LittleEndian(map.AsSpan(4), 999);
         BinaryPrimitives.WriteSingleLittleEndian(map.AsSpan(16), -42000);
         BinaryPrimitives.WriteSingleLittleEndian(map.AsSpan(20), -7800);
         BinaryPrimitives.WriteSingleLittleEndian(map.AsSpan(24), 31600);
@@ -53,7 +53,7 @@ public class PlayerRadarTests
         engine.OnFrame(1792347698264, 0x0036, new byte[8]);
         var snapshot = engine.Snapshot();
         var enemy = Assert.Single(snapshot.Players, p => p.Name == "EnemyB");
-        Assert.True(enemy.IsEnemy);
+        Assert.Null(enemy.IsEnemy); // minimised fixture stores 0 in the hostility byte, which is not the client mark
         Assert.Equal("Asmodian", enemy.Faction);
         Assert.Equal("Eighth-Class Soldier", enemy.RankName);
         Assert.True(enemy.RankVerified);
@@ -74,9 +74,9 @@ public class PlayerRadarTests
         Feed(engine, Identity("EnemyB"));
         Assert.Null(Assert.Single(engine.Snapshot().Players).IsEnemy);
         engine.SetOwnFaction("elyos");
-        Assert.True(Assert.Single(engine.Snapshot().Players).IsEnemy);
+        Assert.Null(Assert.Single(engine.Snapshot().Players).IsEnemy); // byte 0 is not hostile, even for the other race
         engine.SetOwnFaction("Asmodian");
-        Assert.False(Assert.Single(engine.Snapshot().Players).IsEnemy);
+        Assert.Null(Assert.Single(engine.Snapshot().Players).IsEnemy);
         engine.SetOwnFaction("Auto");
         Assert.Null(Assert.Single(engine.Snapshot().Players).IsEnemy);
         Assert.Throws<FormatException>(() => engine.SetOwnFaction("wrong"));
@@ -107,7 +107,7 @@ public class PlayerRadarTests
         engine.OnFrame(1, 0x4536, foeCard);
         engine.OnFrame(1, 0x4536, kinCard);
         Assert.True(Assert.Single(engine.Snapshot().Players, p => p.Name == "Foe").IsEnemy);
-        Assert.Null(Assert.Single(engine.Snapshot().Players, p => p.Name == "Kin").IsEnemy);
+        Assert.False(Assert.Single(engine.Snapshot().Players, p => p.Name == "Kin").IsEnemy);
 
         engine.SetOwnFaction("Asmodian");
         Assert.True(Assert.Single(engine.Snapshot().Players, p => p.Name == "Foe").IsEnemy);
@@ -115,53 +115,27 @@ public class PlayerRadarTests
 
         engine.SetOwnFaction("Elyos");
         Assert.True(Assert.Single(engine.Snapshot().Players, p => p.Name == "Foe").IsEnemy);
-        Assert.True(Assert.Single(engine.Snapshot().Players, p => p.Name == "Kin").IsEnemy);
+        Assert.False(Assert.Single(engine.Snapshot().Players, p => p.Name == "Kin").IsEnemy); // byte 2 is not the hostile mark
     }
 
     [Fact]
-    public void Unlisted_map_keeps_the_other_race_friendly_unless_hostility_is_set()
+    public void Hostility_byte_not_race_decides_the_enemy()
     {
-        // pc 6 agrees with Elyos race 1 gender 2; pc 35 agrees with Asmodian race 2 gender 1.
-        // Hostility 0 and 192 are the dungeon values (not 1). 1110 is Altgard in the default zone table;
-        // 600022 is the dungeon map id from the 2026-11-17 load and is not in that table.
-        static byte[] Card(byte id, string name, byte pc, byte race, byte gender, byte hostility) =>
+        // pc 6 agrees with Elyos race 1 gender 2. Bytes 0 and 192 were on dungeon Elyos the client did not mark hostile.
+        static byte[] Card(byte id, string name, byte hostility) =>
         [
             id, 0x07, 0x20, 0xA0, 0x01, 0x17, (byte)name.Length, ..System.Text.Encoding.UTF8.GetBytes(name),
-            pc, 0x00, 0x00, 0x00, race, gender, hostility,
+            0x06, 0x00, 0x00, 0x00, 0x01, 0x02, hostility,
         ];
 
         var engine = new RadarEngine(new RadarConfig());
         engine.SetOwnFaction("Asmodian");
-        var elyos = Card(0x10, "Ely", 6, 1, 2, 0);
-        var marked = Card(0x11, "Foe", 6, 1, 2, 1);
-        var quiet = Card(0x13, "Tin", 6, 1, 2, 192);
-        var kin = Card(0x12, "Kin", 35, 2, 1, 0);
-
-        engine.OnFrame(1, 0x4536, elyos);
-        Assert.True(Assert.Single(engine.Snapshot().Players).IsEnemy); // no map yet: open-world rule
-
-        void Load(int mapId, long t)
-        {
-            var body = new byte[16];
-            BinaryPrimitives.WriteInt32LittleEndian(body.AsSpan(4), mapId);
-            engine.OnFrame(t, 0x2136, body);
-        }
-
-        Load(600022, 2);
-        engine.OnFrame(3, 0x4536, elyos);
-        engine.OnFrame(3, 0x4536, marked);
-        engine.OnFrame(3, 0x4536, quiet);
-        engine.OnFrame(3, 0x4536, kin);
-        Assert.False(Assert.Single(engine.Snapshot().Players, p => p.Name == "Ely").IsEnemy);
+        engine.OnFrame(1, 0x4536, Card(0x10, "Ely", 0));
+        engine.OnFrame(1, 0x4536, Card(0x11, "Foe", 1));
+        engine.OnFrame(1, 0x4536, Card(0x13, "Tin", 192));
+        Assert.Null(Assert.Single(engine.Snapshot().Players, p => p.Name == "Ely").IsEnemy);
         Assert.True(Assert.Single(engine.Snapshot().Players, p => p.Name == "Foe").IsEnemy);
-        Assert.False(Assert.Single(engine.Snapshot().Players, p => p.Name == "Tin").IsEnemy);
-        Assert.False(Assert.Single(engine.Snapshot().Players, p => p.Name == "Kin").IsEnemy);
-
-        Load(1110, 4);
-        engine.OnFrame(5, 0x4536, elyos);
-        engine.OnFrame(5, 0x4536, kin);
-        Assert.True(Assert.Single(engine.Snapshot().Players, p => p.Name == "Ely").IsEnemy);
-        Assert.False(Assert.Single(engine.Snapshot().Players, p => p.Name == "Kin").IsEnemy);
+        Assert.Null(Assert.Single(engine.Snapshot().Players, p => p.Name == "Tin").IsEnemy);
     }
 
     [Fact]

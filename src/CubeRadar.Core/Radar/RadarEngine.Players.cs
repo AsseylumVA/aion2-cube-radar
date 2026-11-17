@@ -137,20 +137,10 @@ public sealed partial class RadarEngine
     private bool IsEnemy(PlayerIdentity i) => ClassifyEnemy(i) == true;
 
     /// <summary>
-    /// Hostility 1 is the client's hostile mark and always wins, including same race on another server.
-    /// On a map listed in <see cref="RadarConfig.MapZones"/> the other race is an enemy, as in the open world.
-    /// A map id that is not in that table is an instance: the 2026-11-17 dungeon load was 600022, Altgard stayed
-    /// 1110. The u32 after the map id is non-zero on both, so it is not the instance flag. There the other race
-    /// stays friendly unless the hostility byte is 1. No map yet keeps the open-world rule.
+    /// The byte after gender is the client's mark: 1 hostile, 2 own server, anything else not hostile.
+    /// Race does not override it. Dungeon Elyos were 0, 8, 64, 128, 136 or 192 at that byte and were not hostile in game.
     /// </summary>
-    private bool? ClassifyEnemy(PlayerIdentity i)
-    {
-        if (i.Hostile == true) return true;
-        if (MapId is int map && !_cfg.MapZones.ContainsKey(map)) return false;
-        var own = EffectiveOwnFaction;
-        if (own == PlayerFaction.Unknown || i.Faction == PlayerFaction.Unknown) return null;
-        return own != i.Faction;
-    }
+    private bool? ClassifyEnemy(PlayerIdentity i) => i.Hostile == true ? true : i.Hostile == false ? false : null;
 }
 
 public sealed record PlayerView(uint EntityId, string Name, string Faction, uint? RankCode, string? RankName, bool RankVerified, bool? IsEnemy,
