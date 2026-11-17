@@ -846,20 +846,15 @@ internal static class OverlayRenderer
             }
         }
 
-        // us: a small ringed dot, so it stays readable on the map without covering it
-        var meColor = me.AgeMs <= s.FixFreshSeconds * 1000 ? Palette.Me : Color.FromArgb(150, Palette.Me);
+        // us
         if (me.Ring > 0)
         {
-            using var unc = new Pen(Color.FromArgb(150, Palette.Me), 1f) { DashStyle = DashStyle.Dot };
+            using var unc = new Pen(Color.FromArgb(140, Palette.Me), 1) { DashStyle = DashStyle.Dot };
             var ur = Math.Max(4f, (float)(me.Ring * px2world));
             g.DrawEllipse(unc, cx - ur, cy - ur, 2 * ur, 2 * ur);
         }
-        using (var halo = new Pen(Color.FromArgb(180, Palette.Ink), 2.2f))
-            g.DrawEllipse(halo, cx - 6.2f, cy - 6.2f, 12.4f, 12.4f);
-        using (var ring = new Pen(meColor, 1.45f))
-            g.DrawEllipse(ring, cx - 5.4f, cy - 5.4f, 10.8f, 10.8f);
-        using (var meBrush = new SolidBrush(meColor))
-            g.FillEllipse(meBrush, cx - 2.15f, cy - 2.15f, 4.3f, 4.3f);
+        using (var meBrush = new SolidBrush(me.AgeMs <= s.FixFreshSeconds * 1000 ? Palette.Me : Color.FromArgb(130, Palette.Me)))
+            g.FillEllipse(meBrush, cx - 4.5f, cy - 4.5f, 9, 9);
 
         // cubes, nearest drawn last (on top). Labels that would stack on each other are dropped; the marker stays.
         var live = s.Cubes.Where(c => c.Status is nameof(CubeStatus.Visible) or nameof(CubeStatus.Opening) or nameof(CubeStatus.OutOfView))
