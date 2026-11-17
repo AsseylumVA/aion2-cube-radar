@@ -98,15 +98,12 @@ public sealed partial class RadarEngine
         foreach (var id in _players.Where(kv => now - kv.Value.LastSeenMs > 120_000).Select(kv => kv.Key).ToList())
             _players.Remove(id);
         ObserveEnemies(now);
-        var own = EffectiveOwnFaction;
         var ownEstimated = SelfFix is null || now - SelfFixMs > _cfg.FixFreshSeconds * 1000 ||
                            (Ring is { } ring && ring.TimeMs > SelfFixMs);
         return _players.Values.Where(p => p.Identity.EntityId != SelfId).Select(p =>
         {
             var i = p.Identity;
-            bool? enemy = i.Hostile == true ? true
-                : own == PlayerFaction.Unknown || i.Faction == PlayerFaction.Unknown ? null
-                : own != i.Faction;
+            bool? enemy = ClassifyEnemy(i);
             var pos = p.Position;
             double? distance = pos is { } f && ox is { } x && oy is { } y
                 ? Units.Planar(x, y, f.X, f.Y) / Units.PerMetre : null;
@@ -137,11 +134,22 @@ public sealed partial class RadarEngine
         if (previous == 0 && n > 0) EnemyAppeared?.Invoke();
     }
 
-    private bool IsEnemy(PlayerIdentity i)
+    private bool IsEnemy(PlayerIdentity i) => ClassifyEnemy(i) == true;
+
+    /// <summary>
+    /// Hostility 1 is the client's hostile mark and always wins, including same race on another server.
+    /// On a map listed in <see cref="RadarConfig.MapZones"/> the other race is an enemy, as in the open world.
+    /// A map id that is not in that table is an instance: the 2026-11-17 dungeon load was 600022, Altgard stayed
+    /// 1110. The u32 after the map id is non-zero on both, so it is not the instance flag. There the other race
+    /// stays friendly unless the hostility byte is 1. No map yet keeps the open-world rule.
+    /// </summary>
+    private bool? ClassifyEnemy(PlayerIdentity i)
     {
         if (i.Hostile == true) return true;
+        if (MapId is int map && !_cfg.MapZones.ContainsKey(map)) return false;
         var own = EffectiveOwnFaction;
-        return own != PlayerFaction.Unknown && i.Faction != PlayerFaction.Unknown && own != i.Faction;
+        if (own == PlayerFaction.Unknown || i.Faction == PlayerFaction.Unknown) return null;
+        return own != i.Faction;
     }
 }
 
