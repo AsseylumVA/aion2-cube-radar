@@ -1024,12 +1024,16 @@ function publishNudges() {
   for (const id of Object.keys(loadNudges())) publishNudge(id);
 }
 
-/** Old shifts were fitted to the previous map scale and would slide the picture off the marks. */
+/**
+ * Old shifts were fitted to the previous map scale and would slide the overlay picture off the markers
+ * (nudges move only the bitmap offset; packet markers stay put). The radar also drops them on load via MapFit.
+ */
 function dropStaleNudge() {
   if (localStorage.getItem("mapFit") === "816") return;
   localStorage.removeItem("mapNudge");
   localStorage.setItem("mapFit", "816");
-  for (const id of ["verteron", "altgard"]) publishNudge(id);
+  for (const id of ["verteron", "altgard", "eltnen", "morheim", "reshanta_upper", "reshanta_lower", "reshanta_core"])
+    publishNudge(id);
 }
 
 document.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => {

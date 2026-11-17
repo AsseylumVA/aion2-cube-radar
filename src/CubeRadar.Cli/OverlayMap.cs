@@ -30,6 +30,7 @@ internal static class OverlayMap
         var zone = Find(snapshot);
         if (zone is null) return;
         var shift = nudges is not null && nudges.TryGetValue(zone.Id, out var nudge) ? nudge : null;
+        // Nudge is added to the image offset only (same as web withShift). Markers use packet world coords and stay put.
         var offsetX = zone.OffsetX + (shift?.X ?? 0);
         var offsetY = zone.OffsetY + (shift?.Y ?? 0);
         // The square's corner is farther out than its edge, so the tile search uses that diagonal.
@@ -45,10 +46,8 @@ internal static class OverlayMap
             for (var row = 0; row < zone.TilesY; row++)
             for (var col = 0; col < zone.TilesX; col++)
             {
-                var x0 = (col * zone.Tile - offsetX) / zone.Scale;
-                var y0 = (row * zone.Tile - offsetY) / zone.Scale;
-                var x1 = ((col + 1) * zone.Tile - offsetX) / zone.Scale;
-                var y1 = ((row + 1) * zone.Tile - offsetY) / zone.Scale;
+                // Same world corners as app.js drawZoneMap (mapPixel inverse).
+                var (x0, y0, x1, y1) = MapProjection.TileWorldRect(offsetX, offsetY, zone.Scale, zone.Tile, col, row);
                 if (!Hits(x0, y0, x1, y1, playerX, playerY, reach)) continue;
                 var tile = LoadTile(zone, col, row);
                 if (tile is null) continue;

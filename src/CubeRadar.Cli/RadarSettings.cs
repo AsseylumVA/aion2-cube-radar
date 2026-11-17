@@ -87,6 +87,12 @@ internal sealed class RadarSettings
     public int? LastMapId { get; set; }
     /// <summary>Pixel shift of a zone picture, shared with the web view so both show the same alignment.</summary>
     public Dictionary<string, MapNudge> MapNudges { get; set; } = new();
+    /// <summary>
+    /// Map calibration id. <see cref="CubeRadar.Core.Radar.MapProjection.Fit816"/> means the 816 km square fit.
+    /// Missing/older values: drop <see cref="MapNudges"/> — they were fitted to the previous scale and shift only the
+    /// overlay bitmap (markers stay on packet coordinates), which is what made the picture look a few steps off.
+    /// </summary>
+    public string? MapFit { get; set; }
     /// <summary>Look for a newer version on GitHub at start and every 6 hours (single exe only, see Updater).</summary>
     public bool UpdateCheckEnabled { get; set; } = true;
 
@@ -102,7 +108,17 @@ internal sealed class RadarSettings
             s = new();
         }
         s._path = path;
+        if (s.DropStaleMapNudges()) s.Save();
         return s;
+    }
+
+    /// <summary>Same idea as web <c>dropStaleNudge</c>: one-shot clear of pre-816 align shifts.</summary>
+    internal bool DropStaleMapNudges()
+    {
+        if (MapFit == CubeRadar.Core.Radar.MapProjection.Fit816) return false;
+        MapFit = CubeRadar.Core.Radar.MapProjection.Fit816;
+        MapNudges.Clear();
+        return true;
     }
 
     public void Save()
