@@ -77,7 +77,9 @@ internal static class RadarCommand
 
         var settings = RadarSettings.Load(Path.Combine(AppPaths.DataDir, "settings.json"));
         // Admin rights let the overlay see Alt in the elevated game (see Elevation). Declined: go on without them.
-        if (replay is null && overlayOnly && settings.OverlayHideInMenus && settings.OverlayAdminRights && !Elevation.IsElevated)
+        // --no-elevate skips that handoff for this launch only; a normal start still restarts elevated.
+        if (replay is null && overlayOnly && settings.OverlayHideInMenus && settings.OverlayAdminRights && !Elevation.IsElevated
+            && !a.Contains("--no-elevate"))
         {
             instance.ReleaseMutex(); // the elevated copy takes over the lock
             if (Elevation.TryRestartElevated(Environment.GetCommandLineArgs().Skip(1))) return 0;
@@ -168,6 +170,11 @@ internal static class RadarCommand
         {
             if (CubeSound.Play(settings.SoundFile, settings.SoundVolumePct) is { } note) Log(note);
         }
+        void PlayEnemySound()
+        {
+            if (!CubeSound.PlayGenerated(WavVolume.EnemyAlert(settings.SoundVolumePct)))
+                Log("enemy alert: no sound output device");
+        }
         if (beep) CubeSound.Prepare(); // listed in the Windows volume mixer before the first cube
 
         void SetNorth(string north)
@@ -195,8 +202,7 @@ internal static class RadarCommand
         };
         engine.EnemyAppeared += () =>
         {
-            if (beep && settings.SoundEnabled && !CubeSound.PlayGenerated(WavVolume.EnemyAlert(settings.SoundVolumePct)))
-                Log("enemy alert: no sound output device");
+            if (beep && settings.PlayEnemySound) PlayEnemySound();
         };
         engine.CubeChanged += c =>
         {
@@ -320,7 +326,7 @@ internal static class RadarCommand
             {
                 Directory.CreateDirectory(AppPaths.Captures);
                 TryOpen(AppPaths.Captures);
-            }, updater, () => engine.Snapshot().FactionSetting, SetFaction);
+            }, updater, () => engine.Snapshot().FactionSetting, SetFaction, PlayEnemySound);
             overlay = OverlayWindow.Start(engine.Snapshot, settings, actions);
             overlay.ShowTray();
             if (Opt("--settings-png") is { } settingsPng) SettingsForm.SavePng(settingsPng, settings, actions);

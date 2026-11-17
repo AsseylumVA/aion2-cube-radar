@@ -39,6 +39,7 @@ internal sealed class OverlayWindow : Form
     private RadarSnapshot? _last;
     private int _ticks;
     private bool _moving;
+    private int _dpiDepth;
     private int[] _gamePids = [];
     private long _gamePidsAt = -10_000;
     private long _cursorShownSince = -1;
@@ -57,6 +58,9 @@ internal sealed class OverlayWindow : Form
         StartPosition = FormStartPosition.Manual;
         BackColor = Palette.Background;
         DoubleBuffered = true;
+        // Same as the settings window: linear DPI, not Font. Font mode caches a pixel size and scales it
+        // again on WM_GETDPISCALEDSIZE, which stretches this layered bitmap when the monitor DPI changes.
+        AutoScaleMode = AutoScaleMode.Dpi;
         Text = "Cube Radar Overlay";
         ApplySettings();
         var p = new Point(settings.OverlayX ?? 0, settings.OverlayY ?? 0);
@@ -130,31 +134,92 @@ internal sealed class OverlayWindow : Form
         base.OnMouseClick(e);
     }
 
+    /// <summary>
+    /// Real monitor DPI. <see cref="GetDpiForWindow"/> and <see cref="DeviceDpi"/> stay at the system DPI
+    /// when awareness was set too late, so a move onto another scale kept the old bitmap.
+    /// </summary>
+    private int OverlayDpi
+    {
+        get
+        {
+            if (IsHandleCreated)
+            {
+                var monitor = MonitorFromWindow(Handle, 2); // MONITOR_DEFAULTTONEAREST
+                if (monitor != IntPtr.Zero && GetDpiForMonitor(monitor, 0, out var dpiX, out _) == 0 && dpiX > 0)
+                    return (int)dpiX;
+                var windowDpi = (int)GetDpiForWindow(Handle);
+                if (windowDpi > 0) return windowDpi;
+            }
+            return DeviceDpi > 0 ? DeviceDpi : 96;
+        }
+    }
+
     /// <summary>Overlay scale: screen DPI times the user's size setting.</summary>
-    private float RenderScale => DeviceDpi / 96f * Math.Clamp(_settings.OverlayScalePct, 50, 200) / 100f;
+    private float RenderScale => ScaleFor(OverlayDpi);
+
+    private float ScaleFor(int dpi) => dpi / 96f * Math.Clamp(_settings.OverlayScalePct, 50, 200) / 100f;
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        ApplySettings();
+    }
+
+    /// <summary>
+    /// Physical size for the monitor DPI Windows is about to switch to. Returning false lets Font autoscaling
+    /// invent a size from the cached pixel bounds; this window's bitmap has to match <see cref="OverlayRenderer.Measure"/>.
+    /// </summary>
+    protected override bool OnGetDpiScaledSize(int deviceDpiOld, int deviceDpiNew, ref Size desiredSize)
+    {
+        desiredSize = OverlayRenderer.Measure(ScaleFor(deviceDpiNew), _settings.ShowEnemies);
+        return true;
+    }
+
+    /// <summary>
+    /// Settings relayouts here because WinForms scales its controls. This window is a layered bitmap, so the
+    /// suggested rect only resizes the HWND — the previous bitmap stays stretched until we paint at the new DPI.
+    /// </summary>
+    protected override void OnDpiChanged(DpiChangedEventArgs e)
+    {
+        if (_dpiDepth > 0) return; // Size/UpdateLayeredWindow can re-enter this message; don't loop
+        _dpiDepth++;
+        try
+        {
+            base.OnDpiChanged(e);
+            ApplySettings();
+        }
+        finally
+        {
+            _dpiDepth--;
+        }
+    }
 
     /// <summary>Re-reads size and opacity (called after every change in the settings window).</summary>
     public void ApplySettings()
     {
-        Size = OverlayRenderer.Measure(RenderScale, _settings.ShowEnemies);
+        var size = OverlayRenderer.Measure(RenderScale, _settings.ShowEnemies);
+        if (Size != size) Size = size;
         Redraw();
     }
 
     /// <summary>
     /// Paints the overlay into a bitmap and hands it to Windows with per-pixel alpha (UpdateLayeredWindow), so the radar
     /// and the enemy list below it each get their own opacity. A window updated this way does not use WM_PAINT.
+    /// The bitmap is always the current DPI size, never the pixel size cached before a monitor change.
     /// </summary>
     private void Redraw()
     {
-        var size = ClientSize;
-        if (!IsHandleCreated || size.Width <= 0 || size.Height <= 0) return;
+        if (!IsHandleCreated) return;
+        var size = OverlayRenderer.Measure(RenderScale, _settings.ShowEnemies);
+        if (size.Width <= 0 || size.Height <= 0) return;
+        if (Size != size) Size = size;
         using var frame = new Bitmap(size.Width, size.Height, PixelFormat.Format32bppArgb);
         using (var g = Graphics.FromImage(frame))
             OverlayRenderer.Render(g, size, _last, RenderScale, _settings.OverlayRangeM, _settings.ShowEnemies, _settings.MapNudges,
                 _settings.ShowMapCubes, _settings.ShowFlightRings, _settings.ShowKibelisks);
         OverlayRenderer.ApplyOpacity(frame, RenderScale, Math.Clamp(_settings.OverlayOpacityPct, 40, 100),
             Math.Clamp(_settings.OverlayListOpacityPct ?? _settings.OverlayOpacityPct, 40, 100));
-        var bitmap = frame.GetHbitmap(Color.FromArgb(0)); // premultiplied alpha, as UpdateLayeredWindow needs it
+        var bitmap = PremultipliedBitmap(frame); // keeps per-pixel alpha; GetHbitmap would flatten the rounded corners
         var dc = CreateCompatibleDC(IntPtr.Zero);
         var old = SelectObject(dc, bitmap);
         try
@@ -457,6 +522,68 @@ internal sealed class OverlayWindow : Form
     private static extern bool UpdateLayeredWindow(IntPtr hwnd, IntPtr hdcDst, IntPtr pptDst, ref Size psize, IntPtr hdcSrc,
         ref Point pptSrc, int crKey, ref BlendFunction pblend, int flags);
 
+    /// <summary>A top-down 32-bit DIB whose bits are the bitmap, alpha included.</summary>
+    private static IntPtr PremultipliedBitmap(Bitmap frame)
+    {
+        var info = new BitmapInfo
+        {
+            Header = new BitmapInfoHeader
+            {
+                Size = Marshal.SizeOf<BitmapInfoHeader>(),
+                Width = frame.Width,
+                Height = -frame.Height,
+                Planes = 1,
+                BitCount = 32,
+            },
+        };
+        var screen = CreateCompatibleDC(IntPtr.Zero);
+        var bits = IntPtr.Zero;
+        var bitmap = CreateDIBSection(screen, ref info, 0, out bits, IntPtr.Zero, 0);
+        DeleteDC(screen);
+        if (bitmap == IntPtr.Zero || bits == IntPtr.Zero) return frame.GetHbitmap(Color.FromArgb(0));
+        var data = frame.LockBits(new Rectangle(Point.Empty, frame.Size), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+        try
+        {
+            var row = new byte[frame.Width * 4];
+            for (var y = 0; y < frame.Height; y++)
+            {
+                Marshal.Copy(data.Scan0 + y * data.Stride, row, 0, row.Length);
+                Marshal.Copy(row, 0, bits + y * row.Length, row.Length);
+            }
+        }
+        finally
+        {
+            frame.UnlockBits(data);
+        }
+        return bitmap;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct BitmapInfoHeader
+    {
+        public int Size;
+        public int Width;
+        public int Height;
+        public short Planes;
+        public short BitCount;
+        public int Compression;
+        public int SizeImage;
+        public int XPelsPerMeter;
+        public int YPelsPerMeter;
+        public int ClrUsed;
+        public int ClrImportant;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct BitmapInfo
+    {
+        public BitmapInfoHeader Header;
+        public uint Unused;
+    }
+
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr CreateDIBSection(IntPtr hdc, ref BitmapInfo info, uint usage, out IntPtr bits, IntPtr section, uint offset);
+
     [DllImport("gdi32.dll")]
     private static extern IntPtr CreateCompatibleDC(IntPtr hdc);
 
@@ -483,100 +610,130 @@ internal sealed class OverlayWindow : Form
 
     [DllImport("user32.dll")]
     private static extern bool SetWindowPos(IntPtr hWnd, IntPtr insertAfter, int x, int y, int cx, int cy, uint flags);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint flags);
+
+    [DllImport("shcore.dll")]
+    private static extern int GetDpiForMonitor(IntPtr monitor, int dpiType, out uint dpiX, out uint dpiY);
 }
 
 internal static class Palette
 {
-    public static readonly Color Background = Color.FromArgb(14, 18, 23);
-    public static readonly Color Text = Color.FromArgb(230, 235, 240);
-    public static readonly Color Muted = Color.FromArgb(139, 150, 163);
-    public static readonly Color Line = Color.FromArgb(48, 58, 70);
+    public static readonly Color Background = Color.FromArgb(15, 18, 22);
+    public static readonly Color Text = SettingsChrome.Fg;
+    public static readonly Color Muted = SettingsChrome.Muted;
+    public static readonly Color Line = SettingsChrome.Line;
     public static readonly Color Visible = Color.FromArgb(61, 220, 132);
     public static readonly Color OutOfView = Color.FromArgb(242, 179, 61);
     public static readonly Color Opening = Color.FromArgb(255, 225, 77);
-    public static readonly Color Me = Color.FromArgb(77, 163, 255);
-    public static readonly Color Warn = Color.FromArgb(255, 107, 91);
+    public static readonly Color Me = SettingsChrome.Accent;
+    public static readonly Color Warn = SettingsChrome.Danger;
+    public static readonly Color Ink = Color.FromArgb(8, 10, 12);
 }
 
 /// <summary>Draws the mini radar; also used to render a PNG for checking the layout.</summary>
 internal static class OverlayRenderer
 {
-    private const float Side = 230, Header = 22, Margin = 14, EnemyFooter = 104;
+    private const float Side = 230, Header = 36, Margin = 16, EnemyFooter = 132;
     private const double LevelMetres = 3, SendRadiusM = 100;
 
     public static Size Measure(float scale, bool showEnemies = true) =>
         new((int)(Side * scale), (int)((Side + Header + (showEnemies ? EnemyFooter : 0)) * scale));
 
-    /// <summary>The settings button in the header, in client pixels.</summary>
-    public static Rectangle GearRect(float scale) =>
-        Rectangle.Round(new RectangleF((Side - 24) * scale, 1 * scale, 22 * scale, Header * scale - 2 * scale));
+    /// <summary>
+    /// "Segoe UI Semibold" is its own family. <see cref="FontStyle"/> has no semibold, and Bold on that family
+    /// synthesizes a heavier face.
+    /// </summary>
+    private static Font Medium(float points) =>
+        new("Segoe UI Semibold", points, FontStyle.Regular, GraphicsUnit.Point);
+
+    /// <summary>The settings button in the header, in client pixels. Matches <see cref="GearBox"/>.</summary>
+    public static Rectangle GearRect(float scale)
+    {
+        var box = GearBox();
+        return Rectangle.Round(new RectangleF(box.X * scale, box.Y * scale, box.Width * scale, box.Height * scale));
+    }
+
+    private static RectangleF GearBox()
+    {
+        const float size = 22f;
+        return new RectangleF(Side - 8f - size, (Header - size) / 2f, size, size);
+    }
 
     public static void Render(Graphics g, Size size, RadarSnapshot? s, float scale, int rangeM, bool showEnemies = true,
         IReadOnlyDictionary<string, MapNudge>? nudges = null, bool showMapCubes = true, bool showFlightRings = true,
         bool showKibelisks = true)
     {
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
-        g.Clear(Palette.Background);
+        g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+        g.Clear(Color.Transparent);
         g.ScaleTransform(scale, scale);
 
-        using var small = new Font("Segoe UI", 8f, FontStyle.Bold, GraphicsUnit.Point);
-        using var label = new Font("Segoe UI", 8.5f, FontStyle.Bold, GraphicsUnit.Point);
-        using var tiny = new Font("Segoe UI", 7f, FontStyle.Regular, GraphicsUnit.Point);
-        using var rankFont = new Font("Segoe UI", 8.5f, FontStyle.Bold, GraphicsUnit.Point);
+        // Segoe UI Semibold: Regular was hairline over the game, Bold too heavy. FontStyle has no Semibold.
+        using var small = Medium(9.5f);
+        using var strong = Medium(9.5f);
+        using var label = Medium(9f);
+        using var tiny = Medium(9f);
+        using var rankFont = Medium(9f);
 
-        using (var border = new Pen(Palette.Line, 1))
-            g.DrawRectangle(border, 0.5f, 0.5f, Side - 1, Side + Header + (showEnemies ? EnemyFooter : 0) - 1);
+        var totalH = Side + Header + (showEnemies ? EnemyFooter : 0f);
+        var radius = SettingsChrome.Radius(small);
+        var panel = new RectangleF(0.5f, 0.5f, Side - 1f, totalH - 1f);
+        using (var plate = SettingsChrome.Round(panel, radius))
+        using (var bg = new SolidBrush(Palette.Background))
+            g.FillPath(bg, plate);
+        var clipped = g.Save();
+        using (var plate = SettingsChrome.Round(panel, radius))
+            g.SetClip(plate);
 
-        // header: name, own position age, range
-        Text(g, "CUBE RADAR", small, Palette.Muted, 7, 4);
-        Text(g, $"{rangeM} m", small, Palette.Muted, Side - 27, 4, right: true);
-        using (var gear = new Font("Segoe UI Symbol", 10.5f, FontStyle.Regular, GraphicsUnit.Point))
-            Text(g, "⚙", gear, Palette.Text, Side - 13, 1, center: true);
         var me = Me(s);
-        if (s is not null)
-        {
-            var (posText, posColor) = me switch
-            {
-                { Ring: > 0 } m => (UiText.T("overlay.posRing", Math.Round(m.Ring / 100)), Palette.OutOfView),
-                { } m => (UiText.T("overlay.posAge", m.AgeMs / 1000), m.AgeMs <= s.FixFreshSeconds * 1000 ? Palette.Visible : m.AgeMs <= 30_000 ? Palette.OutOfView : Palette.Warn),
-                null => (UiText.T("overlay.posUnknown"), Palette.Warn),
-            };
-            var tw = g.MeasureString(posText, small).Width;
-            var px = Side / 2 - tw / 2 + 5;
-            using var dot = new SolidBrush(posColor);
-            g.FillEllipse(dot, px - 10, 9, 6, 6);
-            Text(g, posText, small, Palette.Muted, px, 4);
-        }
+        DrawHeader(g, s, me, rangeM, small, strong);
 
         var cx = Side / 2;
         var cy = Header + Side / 2;
         var r = Side / 2 - Margin;
         var px2world = r / (rangeM * 100f); // pixels per game unit
+        DrawWash(g, cx, cy, r);
 
         void Rings()
         {
-            using var ring = new Pen(Palette.Line, 1);
-            g.DrawEllipse(ring, cx - r, cy - r, 2 * r, 2 * r);
-            g.DrawEllipse(ring, cx - r / 2, cy - r / 2, r, r);
-            g.DrawLine(ring, cx - r, cy, cx + r, cy);
-            g.DrawLine(ring, cx, cy - r, cx, cy + r);
-            Text(g, $"{rangeM / 2} m", tiny, Palette.Muted, cx + 3, cy - r / 2 - 12);
-            Text(g, UiText.T("overlay.north"), small, Palette.Text, cx - 4, cy - r - 13);
-            if (SendRadiusM < rangeM)
+            StrokeRing(g, cx, cy, r, Color.FromArgb(210, 186, 198, 214), 1.15f, DashStyle.Solid);
+            StrokeRing(g, cx, cy, r / 2f, Color.FromArgb(150, 186, 198, 214), 1f, DashStyle.Solid);
+            using (var cross = new Pen(Color.FromArgb(72, Palette.Text), 1f))
             {
-                using var send = new Pen(Color.FromArgb(255, 130, 196, 255), 1.25f) { DashStyle = DashStyle.Dash };
-                var sr = (float)(SendRadiusM * 100 * px2world);
-                g.DrawEllipse(send, cx - sr, cy - sr, 2 * sr, 2 * sr);
+                g.DrawLine(cross, cx - r, cy, cx + r, cy);
+                g.DrawLine(cross, cx, cy - r, cx, cy + r);
             }
+            using (var tick = new Pen(Color.FromArgb(210, 214, 222, 230), 1.35f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+            {
+                const float len = 7f;
+                g.DrawLine(tick, cx, cy - r, cx, cy - r + len);
+                g.DrawLine(tick, cx, cy + r, cx, cy + r - len);
+                g.DrawLine(tick, cx - r, cy, cx - r + len, cy);
+                g.DrawLine(tick, cx + r, cy, cx + r - len, cy);
+            }
+            Text(g, $"{rangeM / 2} m", tiny, Palette.Muted, cx + 6, cy - r / 2 - 12, halo: true);
+            Text(g, UiText.T("overlay.north"), strong, Palette.Text, cx, cy - r + 3, center: true, halo: true);
+            if (SendRadiusM < rangeM)
+                StrokeRing(g, cx, cy, (float)(SendRadiusM * 100 * px2world), Color.FromArgb(140, 150, 190, 224), 1.05f, DashStyle.Dash);
         }
 
         if (s is null || me is null)
         {
             Rings();
-            if (showEnemies) EnemyList(g, s, small, tiny);
-            Text(g, s is null ? UiText.T("overlay.waiting") : UiText.T("overlay.noPosition"), label, Palette.Muted, cx, cy + r / 2, center: true);
-            if (s is not null) Text(g, UiText.T("overlay.buffHint"), tiny, Palette.Muted, cx, cy + r / 2 + 16, center: true);
+            if (showEnemies) EnemyList(g, s, strong, tiny);
+            var message = s is null ? UiText.T("overlay.waiting") : UiText.T("overlay.noPosition");
+            var send = SendRadiusM < rangeM ? (float)(SendRadiusM * 100 * px2world) : 0f;
+            var wide = g.MeasureString(message, strong).Width > Math.Max(24f, send * 1.5f);
+            var messageY = send > 16f && wide ? cy + send + 8f : cy - 8f;
+            Text(g, message, strong, Palette.Text, cx, messageY, center: true, halo: true);
+            if (s is not null) Text(g, UiText.T("overlay.buffHint"), tiny, Palette.Muted, cx, messageY + 18f, center: true, halo: true);
+            g.Restore(clipped);
+            DrawFrame(g, panel, radius);
             return;
         }
 
@@ -596,7 +753,7 @@ internal static class OverlayRenderer
         Rings();
 
         // own trail (last ~2 minutes): shows where we came from, i.e. roughly where we are heading
-        using (var trail = new Pen(Color.FromArgb(90, Palette.Me), 1.5f))
+        using (var trail = new Pen(Color.FromArgb(150, Palette.Me), 1.6f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round })
         {
             PointF? prev = null;
             foreach (var p in s.Trail.TakeLast(40))
@@ -608,19 +765,25 @@ internal static class OverlayRenderer
             }
         }
 
-        // us
+        // us: a small ringed dot, so it stays readable on the map without covering it
+        var meColor = me.AgeMs <= s.FixFreshSeconds * 1000 ? Palette.Me : Color.FromArgb(150, Palette.Me);
         if (me.Ring > 0)
         {
-            using var unc = new Pen(Color.FromArgb(140, Palette.Me), 1) { DashStyle = DashStyle.Dot };
+            using var unc = new Pen(Color.FromArgb(150, Palette.Me), 1f) { DashStyle = DashStyle.Dot };
             var ur = Math.Max(4f, (float)(me.Ring * px2world));
             g.DrawEllipse(unc, cx - ur, cy - ur, 2 * ur, 2 * ur);
         }
-        using (var meBrush = new SolidBrush(me.AgeMs <= s.FixFreshSeconds * 1000 ? Palette.Me : Color.FromArgb(130, Palette.Me)))
-            g.FillEllipse(meBrush, cx - 4.5f, cy - 4.5f, 9, 9);
+        using (var halo = new Pen(Color.FromArgb(180, Palette.Ink), 2.2f))
+            g.DrawEllipse(halo, cx - 6.2f, cy - 6.2f, 12.4f, 12.4f);
+        using (var ring = new Pen(meColor, 1.45f))
+            g.DrawEllipse(ring, cx - 5.4f, cy - 5.4f, 10.8f, 10.8f);
+        using (var meBrush = new SolidBrush(meColor))
+            g.FillEllipse(meBrush, cx - 2.15f, cy - 2.15f, 4.3f, 4.3f);
 
-        // cubes, nearest drawn last (on top)
+        // cubes, nearest drawn last (on top). Labels that would stack on each other are dropped; the marker stays.
         var live = s.Cubes.Where(c => c.Status is nameof(CubeStatus.Visible) or nameof(CubeStatus.Opening) or nameof(CubeStatus.OutOfView))
             .OrderByDescending(c => c.DistanceM ?? double.MaxValue).ToList();
+        var cubeLabels = new List<RectangleF>();
         foreach (var c in live)
         {
             var color = c.Status switch
@@ -638,9 +801,26 @@ internal static class OverlayRenderer
             if (Inside(p, cx, cy, r - 4))
             {
                 Marker(g, p.X, p.Y, 6.5f, height.Kind, color, filled: c.Status != nameof(CubeStatus.OutOfView));
-                var lx = p.X + 9;
-                if (lx + g.MeasureString(text, label).Width > Side - 3) lx = p.X - 9 - g.MeasureString(text, label).Width;
-                Text(g, text, label, color, lx, p.Y - 8);
+                var measured = g.MeasureString(text, label);
+                var lx = p.X + 10;
+                if (lx + measured.Width > Side - 8) lx = p.X - 10 - measured.Width;
+                var labelBounds = new RectangleF(lx - 1, p.Y - 9, measured.Width + 2, measured.Height);
+                if (cubeLabels.Any(other => other.IntersectsWith(labelBounds)))
+                {
+                    var alt = Math.Abs(lx - (p.X + 10)) < 1f ? p.X - 10 - measured.Width : p.X + 10;
+                    var altBounds = new RectangleF(alt - 1, p.Y - 9, measured.Width + 2, measured.Height);
+                    if (alt > 4 && alt + measured.Width < Side - 4 && !cubeLabels.Any(other => other.IntersectsWith(altBounds)))
+                    {
+                        lx = alt;
+                        labelBounds = altBounds;
+                    }
+                    else labelBounds = RectangleF.Empty;
+                }
+                if (!labelBounds.IsEmpty)
+                {
+                    Text(g, text, label, color, lx, p.Y - 8, halo: true);
+                    cubeLabels.Add(labelBounds);
+                }
             }
             else
             {
@@ -651,15 +831,22 @@ internal static class OverlayRenderer
                 var state = g.Save();
                 g.TranslateTransform(ax, ay);
                 g.RotateTransform((float)(a * 180 / Math.PI));
-                using (var chevron = new Pen(color, 2.5f) { LineJoin = LineJoin.Round, StartCap = LineCap.Round, EndCap = LineCap.Round })
+                PointF[] armA = [new(-4, -6.5f), new(4.5f, 0), new(-4, 6.5f)];
+                PointF[] armB = [new(-9, -6.5f), new(-0.5f, 0), new(-9, 6.5f)];
+                using (var shadow = new Pen(Color.FromArgb(170, Palette.Ink), 3.2f) { LineJoin = LineJoin.Round, StartCap = LineCap.Round, EndCap = LineCap.Round })
                 {
-                    g.DrawLines(chevron, [new PointF(-4, -7), new PointF(5, 0), new PointF(-4, 7)]);
-                    g.DrawLines(chevron, [new PointF(-10, -7), new PointF(-1, 0), new PointF(-10, 7)]);
+                    g.DrawLines(shadow, armA);
+                    g.DrawLines(shadow, armB);
+                }
+                using (var chevron = new Pen(color, 1.7f) { LineJoin = LineJoin.Round, StartCap = LineCap.Round, EndCap = LineCap.Round })
+                {
+                    g.DrawLines(chevron, armA);
+                    g.DrawLines(chevron, armB);
                 }
                 g.Restore(state);
                 var tx = cx + (float)Math.Cos(a) * (r - 30);
                 var ty = cy + (float)Math.Sin(a) * (r - 22);
-                Text(g, text, label, color, tx, ty - 7, center: true);
+                Text(g, text, label, color, tx, ty - 7, center: true, halo: true);
             }
         }
         if (showEnemies)
@@ -686,13 +873,14 @@ internal static class OverlayRenderer
                 var bounds = new RectangleF(x - 2, y - 1, width + 4, 14);
                 if (!placed.Any(other => other.IntersectsWith(bounds)))
                 {
-                    Text(g, text, tiny, Palette.Warn, x, y);
+                    Text(g, text, tiny, Palette.Warn, x, y, halo: true);
                     placed.Add(bounds); // full names/ranks remain in the list if point labels would overlap
                 }
             }
             // Paint badges last, nearest on top, so adjacent name labels can never obscure a class glyph.
             using var red = new SolidBrush(Palette.Warn);
-            using var ink = new SolidBrush(Palette.Background);
+            using var ink = new SolidBrush(Palette.Ink);
+            using var edge = new Pen(Color.FromArgb(210, 42, 16, 14), 1.35f) { LineJoin = LineJoin.Round };
             using var centered = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center,
                 FormatFlags = StringFormatFlags.NoWrap };
             foreach (var marker in markers.AsEnumerable().Reverse())
@@ -701,33 +889,36 @@ internal static class OverlayRenderer
                 PointF[] diamond = [new(q.X, q.Y - markerRadius), new(q.X + markerRadius, q.Y),
                     new(q.X, q.Y + markerRadius), new(q.X - markerRadius, q.Y)];
                 g.FillPolygon(red, diamond);
+                g.DrawPolygon(edge, diamond);
                 g.DrawString(marker.Player.RankSymbol, rankFont, ink,
-                    new RectangleF(q.X - markerRadius, q.Y - markerRadius, 2 * markerRadius, 2 * markerRadius), centered);
+                    new RectangleF(q.X - markerRadius, q.Y - markerRadius + 0.5f, 2 * markerRadius, 2 * markerRadius), centered);
             }
-            EnemyList(g, s, small, tiny);
+            EnemyList(g, s, strong, tiny);
         }
+        g.Restore(clipped);
+        DrawFrame(g, panel, radius);
     }
 
     private static void EnemyList(Graphics g, RadarSnapshot? s, Font title, Font detail)
     {
         var top = Side + Header;
-        using var line = new Pen(Palette.Line);
-        g.DrawLine(line, 5, top, Side - 5, top);
+        using var line = new Pen(Color.FromArgb(140, Palette.Line), 1f);
+        g.DrawLine(line, 12, top + 0.5f, Side - 12, top + 0.5f);
         var enemies = s?.Players.Where(p => p.IsEnemy == true).ToList() ?? [];
-        Text(g, UiText.T("overlay.enemies", enemies.Count), title, Palette.Warn, 7, top + 3);
+        Text(g, UiText.T("overlay.enemies", enemies.Count), title, Palette.Text, 12, top + 8);
         if (s is null || s.OwnFaction == "Unknown")
         {
-            Text(g, UiText.T("overlay.pickFaction"), detail, Palette.OutOfView, 7, top + 26);
+            Text(g, UiText.T("overlay.pickFaction"), detail, Palette.OutOfView, 12, top + 30);
             return;
         }
         if (enemies.Count == 0)
         {
-            Text(g, UiText.T("overlay.noEnemies"), detail, Palette.Muted, 7, top + 26);
+            Text(g, UiText.T("overlay.noEnemies"), detail, Palette.Muted, 12, top + 30);
             return;
         }
         var state = g.Save();
-        g.SetClip(new RectangleF(5, top + 21, Side - 10, EnemyFooter - 22));
-        var y = top + 24;
+        g.SetClip(new RectangleF(8, top + 28, Side - 16, EnemyFooter - 32));
+        var y = top + 30f;
         foreach (var p in enemies.Take(3))
         {
             var faction = p.Faction switch
@@ -737,18 +928,23 @@ internal static class OverlayRenderer
                 _ => UiText.T("faction.unknown"),
             };
             var distance = p.DistanceM is { } d ? $"{(p.PositionStale || p.DistanceEstimated ? "~" : "")}{d:0} m" : UiText.T("overlay.posUnknown");
-            Text(g, $"{p.Name} · {faction} · {distance}", detail, Palette.Warn, 7, y);
+            using var bar = new SolidBrush(p.PositionStale ? Palette.Muted : Palette.Warn);
+            g.FillRectangle(bar, 12, y + 3, 2, 24);
+            Text(g, $"{p.Name} · {faction} · {distance}", detail, Palette.Warn, 18, y);
             var rank = p.RankName is { } name && !name.StartsWith("PvP-Rang", StringComparison.Ordinal) ? name
                 : p.RankCode is { } code ? UiText.T("rank.code", code) : UiText.T("rank.unknown");
             if (p.RankCode is not null && !p.RankVerified) rank += " *";
             if (p.PositionStale && p.PositionAgeMs is { } age) rank += UiText.T("overlay.posOld", age / 1000);
-            Text(g, rank, detail, Palette.Muted, 7, y + 12);
-            y += 26;
+            Text(g, rank, detail, Palette.Muted, 18, y + 16);
+            y += 34;
         }
         g.Restore(state);
     }
 
-    /// <summary>Scales the alpha of the radar (header and map) and of the enemy list below it to the given percentages.</summary>
+    /// <summary>
+    /// Scales the alpha of the radar (header and map) and of the enemy list below it, then premultiplies.
+    /// UpdateLayeredWindow expects premultiplied pixels, including the anti-aliased rounded corners.
+    /// </summary>
     public static void ApplyOpacity(Bitmap frame, float scale, int radarPct, int listPct)
     {
         var listTop = (int)Math.Round((Side + Header) * scale);
@@ -761,7 +957,15 @@ internal static class OverlayRenderer
                 var pct = y < listTop ? radarPct : listPct;
                 var line = data.Scan0 + y * data.Stride;
                 Marshal.Copy(line, row, 0, row.Length);
-                for (var i = 3; i < row.Length; i += 4) row[i] = (byte)(row[i] * pct / 100);
+                for (var i = 3; i < row.Length; i += 4)
+                {
+                    var a = (byte)(row[i] * pct / 100);
+                    row[i] = a;
+                    var f = a / 255f;
+                    row[i - 3] = (byte)(row[i - 3] * f + 0.5f);
+                    row[i - 2] = (byte)(row[i - 2] * f + 0.5f);
+                    row[i - 1] = (byte)(row[i - 1] * f + 0.5f);
+                }
                 Marshal.Copy(row, 0, line, row.Length);
             }
         }
@@ -794,23 +998,113 @@ internal static class OverlayRenderer
         };
         if (filled)
         {
+            using var edge = new Pen(Color.FromArgb(190, Palette.Ink), 2.4f) { LineJoin = LineJoin.Round };
+            g.DrawPolygon(edge, pts);
             using var brush = new SolidBrush(color);
             g.FillPolygon(brush, pts);
         }
         else
         {
-            using var pen = new Pen(color, 2);
+            using var pen = new Pen(color, 1.7f) { LineJoin = LineJoin.Round };
             g.DrawPolygon(pen, pts);
         }
     }
 
-    private static void Text(Graphics g, string text, Font font, Color color, float x, float y, bool right = false, bool center = false)
+    private static void Text(Graphics g, string text, Font font, Color color, float x, float y, bool right = false, bool center = false, bool halo = false)
     {
-        using var brush = new SolidBrush(color);
         var w = g.MeasureString(text, font).Width;
         if (right) x -= w;
         else if (center) x -= w / 2;
+        if (halo)
+        {
+            using var shadow = new SolidBrush(Color.FromArgb(220, Palette.Ink));
+            g.DrawString(text, font, shadow, x - 1f, y);
+            g.DrawString(text, font, shadow, x + 1f, y);
+            g.DrawString(text, font, shadow, x, y - 1f);
+            g.DrawString(text, font, shadow, x, y + 1f);
+        }
+        using var brush = new SolidBrush(color);
         g.DrawString(text, font, brush, x, y);
+    }
+
+    private static void DrawHeader(Graphics g, RadarSnapshot? s, MeView? me, int rangeM, Font font, Font strong)
+    {
+        var rangeText = $"{rangeM} m";
+        var rangeSize = g.MeasureString(rangeText, strong);
+        Text(g, rangeText, strong, Palette.Text, 10, (Header - rangeSize.Height) / 2f);
+
+        var gear = GearBox();
+        var saved = g.Save();
+        g.TranslateTransform(gear.X, gear.Y);
+        SettingsChrome.PaintField(g, new Rectangle(0, 0, (int)gear.Width, (int)gear.Height), strong, hover: false, pressed: false, focused: false, enabled: true);
+        g.Restore(saved);
+        DrawSettings(g, gear, Palette.Text);
+
+        if (s is null) return;
+        var (posText, posColor) = me switch
+        {
+            { Ring: > 0 } m => (UiText.T("overlay.posRing", Math.Round(m.Ring / 100)), Palette.OutOfView),
+            { } m => (UiText.T("overlay.posAge", m.AgeMs / 1000), m.AgeMs <= s.FixFreshSeconds * 1000 ? Palette.Visible : m.AgeMs <= 30_000 ? Palette.OutOfView : Palette.Warn),
+            null => (UiText.T("overlay.posUnknown"), Palette.Warn),
+        };
+        var textSize = g.MeasureString(posText, font);
+        var left = 10 + rangeSize.Width + 8;
+        var right = gear.X - 6;
+        var x = left + Math.Max(0, (right - left - textSize.Width - 12) / 2f) + 12;
+        using var dot = new SolidBrush(posColor);
+        g.FillEllipse(dot, x - 12, (Header - 6f) / 2f, 6, 6);
+        Text(g, posText, font, Palette.Muted, x, (Header - textSize.Height) / 2f);
+    }
+
+    private static void DrawWash(Graphics g, float cx, float cy, float radius)
+    {
+        var rect = new RectangleF(cx - radius, cy - radius, radius * 2f, radius * 2f);
+        using var path = new GraphicsPath();
+        path.AddEllipse(rect);
+        using var brush = new PathGradientBrush(path)
+        {
+            CenterPoint = new PointF(cx, cy),
+            CenterColor = Color.FromArgb(24, 32, 40),
+            SurroundColors = [Color.FromArgb(12, 15, 19)],
+        };
+        g.FillEllipse(brush, rect);
+    }
+
+    private static void DrawFrame(Graphics g, RectangleF panel, float radius)
+    {
+        using var path = SettingsChrome.Round(panel, radius);
+        using var pen = new Pen(Palette.Line, 1f);
+        g.DrawPath(pen, path);
+    }
+
+    private static void StrokeRing(Graphics g, float cx, float cy, float radius, Color color, float width, DashStyle dash)
+    {
+        if (radius < 2f) return;
+        var d = radius * 2f;
+        using var under = new Pen(Color.FromArgb(110, Palette.Ink), width + 1.15f) { DashStyle = dash };
+        g.DrawEllipse(under, cx - radius, cy - radius, d, d);
+        using var pen = new Pen(color, width) { DashStyle = dash };
+        g.DrawEllipse(pen, cx - radius, cy - radius, d, d);
+    }
+
+    /// <summary>Three slider rows. A gear made of a circle and ticks read as a second crosshair on the radar.</summary>
+    private static void DrawSettings(Graphics g, RectangleF box, Color color)
+    {
+        var cx = box.X + box.Width / 2f;
+        var cy = box.Y + box.Height / 2f;
+        using var pen = new Pen(color, 1.35f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        using var knob = new SolidBrush(color);
+        void Row(float y, float shift)
+        {
+            var kx = cx + shift;
+            var ky = cy + y;
+            g.DrawLine(pen, cx - 5.1f, ky, kx - 2.15f, ky);
+            g.DrawLine(pen, kx + 2.15f, ky, cx + 5.1f, ky);
+            g.FillEllipse(knob, kx - 1.55f, ky - 1.55f, 3.1f, 3.1f);
+        }
+        Row(-3.5f, 1.7f);
+        Row(0f, -1.8f);
+        Row(3.5f, 2.3f);
     }
 
     /// <summary>One frame as PNG (for checking the layout without a game).</summary>

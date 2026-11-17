@@ -13,7 +13,8 @@ internal sealed record OverlayActions(
     Action OpenCaptures,
     Updater? Updater = null,
     Func<string>? GetFaction = null,
-    Action<string>? SetFaction = null);
+    Action<string>? SetFaction = null,
+    Action? TestEnemySound = null);
 
 /// <summary>
 /// Settings opened from the overlay's gear button (or the tray). Every change applies at once and is saved; there is
@@ -21,8 +22,8 @@ internal sealed record OverlayActions(
 /// </summary>
 internal sealed class SettingsForm : Form
 {
-    private static readonly Color Bg = Color.FromArgb(22, 27, 33), Field = Color.FromArgb(32, 39, 47), Fg = Color.FromArgb(230, 235, 240),
-        Muted = Color.FromArgb(139, 150, 163), Accent = Color.FromArgb(77, 163, 255), Danger = Color.FromArgb(255, 107, 91);
+    private static readonly Color Bg = SettingsChrome.Bg, Field = SettingsChrome.Field, Fg = SettingsChrome.Fg,
+        Muted = SettingsChrome.Muted, Accent = SettingsChrome.Accent;
 
     private static readonly (string Value, string Key)[] Norths =
         [("-y", "settings.northMinusY"), ("+y", "+Y"), ("+x", "+X"), ("-x", "−X")];
@@ -88,6 +89,7 @@ internal sealed class SettingsForm : Form
             _labels.Add((label, key));
             grid.Controls.Add(label);
             control.Margin = new Padding(0, 3, 0, 3);
+            if (control is SettingsDropDown drop) drop.BindLabel(label);
             grid.Controls.Add(control);
         }
 
@@ -104,30 +106,32 @@ internal sealed class SettingsForm : Form
             return label;
         }
 
-        CheckBox Check(string key, bool value)
+        ToggleSwitch Check(string key, bool value)
         {
-            var box = new CheckBox { Checked = value, AutoSize = true, ForeColor = Fg, Margin = new Padding(0, 3, 0, 3) };
+            var box = new ToggleSwitch { Checked = value, ForeColor = Fg, Margin = new Padding(0, 3, 0, 3) };
             _labels.Add((box, key));
             return box;
         }
 
-        Button Btn(string key)
+        /// <summary>Play icon. The translated text is the accessible name and the tooltip, not a caption.</summary>
+        PlayButton PlayBtn(string key)
         {
-            var b = new Button { AutoSize = true, FlatStyle = FlatStyle.Flat, BackColor = Field, ForeColor = Fg, Padding = new Padding(6, 1, 6, 1) };
-            b.FlatAppearance.BorderColor = Color.FromArgb(60, 70, 82);
+            var b = new PlayButton { Margin = new Padding(0, 3, 0, 3) };
             _labels.Add((b, key));
             return b;
         }
 
-        ComboBox Combo() =>
-            new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 220, BackColor = Field, ForeColor = Fg, FlatStyle = FlatStyle.Flat };
-
-        void Refill(ComboBox box, IEnumerable<string> texts, int selected)
+        CommandButton Btn(string key, CommandTone tone = CommandTone.Quiet)
         {
-            box.Items.Clear();
-            foreach (var text in texts) box.Items.Add(text);
-            box.SelectedIndex = Math.Clamp(selected, 0, Math.Max(0, box.Items.Count - 1));
+            var b = new CommandButton { Tone = tone };
+            _labels.Add((b, key));
+            return b;
         }
+
+        SettingsDropDown Combo() => new() { Width = 240, ForeColor = Fg };
+
+        void Refill(SettingsDropDown box, IEnumerable<string> texts, int selected) =>
+            box.Replace(texts, selected);
 
         // ---- language
         var lang = Combo();
@@ -144,9 +148,17 @@ internal sealed class SettingsForm : Form
         Section("settings.soundSection");
         var sound = Check("settings.soundEnabled", settings.SoundEnabled);
         sound.CheckedChanged += (_, _) => { settings.SoundEnabled = sound.Checked; Save(); };
-        var test = Btn("settings.test");
+        var test = PlayBtn("settings.test");
         test.Click += (_, _) => actions.TestSound();
         Full(Flow(sound, test));
+
+        // Older files have no enemy-sound flag: keep whatever the cube sound was set to until the user chooses.
+        settings.EnemySoundEnabled ??= settings.SoundEnabled;
+        var enemySound = Check("settings.enemySound", settings.EnemySoundEnabled.Value);
+        enemySound.CheckedChanged += (_, _) => { settings.EnemySoundEnabled = enemySound.Checked; Save(); };
+        var enemyPreview = PlayBtn("settings.previewSound");
+        enemyPreview.Click += (_, _) => actions.TestEnemySound?.Invoke();
+        Full(Flow(enemySound, enemyPreview));
 
         var volume = new TrackBar { Minimum = 5, Maximum = 100, TickFrequency = 10, SmallChange = 5, LargeChange = 10, Width = 200,
             Value = Math.Clamp(settings.SoundVolumePct, 5, 100), BackColor = Bg };
@@ -181,7 +193,7 @@ internal sealed class SettingsForm : Form
         var enemies = Check("settings.showEnemies", settings.ShowEnemies);
         enemies.CheckedChanged += (_, _) => { settings.ShowEnemies = enemies.Checked; Save(); };
         Full(enemies);
-        ComboBox? faction = null;
+        SettingsDropDown? faction = null;
         string[] factionValues = ["Auto", "Elyos", "Asmodian"];
         var factionIndex = 0;
         if (actions.SetFaction is { } setFaction)
@@ -208,8 +220,7 @@ internal sealed class SettingsForm : Form
         kibelisks.CheckedChanged += (_, _) => { settings.ShowKibelisks = kibelisks.Checked; Save(); };
         Full(kibelisks);
         var range = Combo();
-        range.Items.AddRange(OverlayWindow.Ranges.Select(r => $"{r} m").Cast<object>().ToArray());
-        range.SelectedIndex = Math.Max(0, Array.IndexOf(OverlayWindow.Ranges, settings.OverlayRangeM));
+        range.Replace(OverlayWindow.Ranges.Select(r => $"{r} m"), Math.Max(0, Array.IndexOf(OverlayWindow.Ranges, settings.OverlayRangeM)));
         range.SelectedIndexChanged += (_, _) =>
         {
             if (_applying) return;
@@ -220,8 +231,7 @@ internal sealed class SettingsForm : Form
 
         int[] scales = [75, 100, 125, 150];
         var scale = Combo();
-        scale.Items.AddRange(scales.Select(s => $"{s} %").Cast<object>().ToArray());
-        scale.SelectedIndex = Math.Max(0, Array.IndexOf(scales, settings.OverlayScalePct));
+        scale.Replace(scales.Select(s => $"{s} %"), Math.Max(0, Array.IndexOf(scales, settings.OverlayScalePct)));
         scale.SelectedIndexChanged += (_, _) =>
         {
             if (_applying) return;
@@ -283,7 +293,7 @@ internal sealed class SettingsForm : Form
             updateState = new Label { AutoSize = true, ForeColor = Muted, MaximumSize = new Size(480, 0), Margin = new Padding(0, 2, 0, 2) };
             check = Btn("settings.checkNow");
             check.Click += (_, _) => _ = updater.CheckAsync();
-            install = Btn("settings.updateNow");
+            install = Btn("settings.updateNow", CommandTone.Primary);
             install.Click += (_, _) => confirmUpdate();
             var page = Btn("settings.github");
             page.Click += (_, _) => updater.OpenPage();
@@ -314,11 +324,9 @@ internal sealed class SettingsForm : Form
         Full(Flow(reset, web, captures));
         Full(Hint("settings.hotkeys"));
 
-        var quit = Btn("settings.quit");
-        quit.ForeColor = Danger;
-        quit.FlatAppearance.BorderColor = Danger;
+        var quit = Btn("settings.quit", CommandTone.Danger);
         quit.Click += (_, _) => { Close(); actions.Quit(); };
-        var close = Btn("settings.close");
+        var close = Btn("settings.close", CommandTone.Primary);
         close.Click += (_, _) => Close();
         var bottom = Flow(quit, close);
         bottom.Margin = new Padding(0, 14, 0, 0);

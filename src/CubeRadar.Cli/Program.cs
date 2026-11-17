@@ -4,6 +4,10 @@ using CubeRadar.Core.Capture;
 using CubeRadar.Core.Dump;
 using CubeRadar.Core.Protocol;
 
+// Before any window or the web host. Otherwise the process stays at the system DPI, WinForms never
+// gets WM_DPICHANGED, and the layered overlay keeps the bitmap from the primary monitor.
+System.Windows.Forms.Application.SetHighDpiMode(System.Windows.Forms.HighDpiMode.PerMonitorV2);
+
 // aion2-cube-radar developer tool. Strictly passive: reads packets through Npcap, never sends anything to the game or
 // alters it. The only internet access is the optional update check of the single exe (Updater).
 CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
@@ -86,6 +90,7 @@ int Usage()
                                open, F12 range)
             --overlay-only     only the overlay: no browser, console hidden (log in the session folder);
                                tray icon to open the web view or quit
+            --no-elevate       with --overlay-only: stay without admin rights for this launch
         cuberadar --quit                           ask the running radar to close (like "Beenden" in the tray)
         cuberadar --version                        print the version
 

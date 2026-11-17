@@ -49,6 +49,15 @@ internal sealed class RadarSettings
     public int? OverlayListOpacityPct { get; set; }
     /// <summary>Sound when a new cube appears.</summary>
     public bool SoundEnabled { get; set; } = true;
+    /// <summary>
+    /// Sound when the view goes from no identified enemy to at least one. Null in a settings file from before the
+    /// split means the same choice as <see cref="SoundEnabled"/>, so turning the cube sound off keeps the enemy alert off.
+    /// </summary>
+    public bool? EnemySoundEnabled { get; set; }
+
+    /// <summary>Whether the enemy-appeared alert should play. Not stored on its own; see <see cref="EnemySoundEnabled"/>.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool PlayEnemySound => EnemySoundEnabled ?? SoundEnabled;
     /// <summary>Optional .wav played instead of the beep.</summary>
     public string? SoundFile { get; set; }
     /// <summary>Volume of the sound, 5–100 %.</summary>
