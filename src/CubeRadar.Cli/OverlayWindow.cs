@@ -752,8 +752,11 @@ internal static class OverlayRenderer
 
         void Rings()
         {
-            StrokeRing(g, cx, cy, r, Color.FromArgb(210, 186, 198, 214), 1.15f, DashStyle.Solid);
-            StrokeRing(g, cx, cy, r / 2f, Color.FromArgb(150, 186, 198, 214), 1f, DashStyle.Solid);
+            using (var ring = new Pen(Color.FromArgb(48, 58, 70), 1f))
+            {
+                g.DrawEllipse(ring, cx - r, cy - r, 2 * r, 2 * r);
+                g.DrawEllipse(ring, cx - r / 2f, cy - r / 2f, r, r);
+            }
             using (var cross = new Pen(Color.FromArgb(72, Palette.Text), 1f))
             {
                 g.DrawLine(cross, cx - r, cy, cx + r, cy);
