@@ -499,6 +499,52 @@ Abyss-Mitschnitt sowie die Symbole 4/5/6 aus der späteren Aufnahme. Das API lie
 die Bilder wurden auf Lesbarkeit geprüft. Vorschauen und Originalnamen bleiben lokal und werden nicht veröffentlicht.
 Stand 0.9.1: Build ohne Warnungen/Fehler, 217 C#-, 22 Python- und 10 Web-UI-Tests erfolgreich (249 insgesamt).
 
+## Minimap: Blickrichtung der Kamera (Bildschirm, nicht Netzwerk)
+
+Die Blickrichtung steht nicht im mitgelesenen Verkehr: Der Server schickt die eigene Bewegung nicht zurück (P1), und
+Client→Server ist verschlüsselt. Für den Pfeil-Modus wird sie deshalb von der Minimap abgelesen, nur aus Bildpunkten.
+
+### M1. Sichtkegel auf der Minimap (BELEGT, 2026-11-07, 1 Screenshot + 167 Bilder à 0,5 s)
+Quelle: Vollbild-Screenshot (Illicit Trade Spot) und eine 90-s-Aufnahme nur des Minimap-Ausschnitts (Tolbas Forest,
+Shugo Station, Ellun River, dazwischen Menüs und Ladebildschirme). 2560×1440, randloses Vollbild
+(`FullscreenMode=1`), Standard-Oberfläche.
+
+- Die Minimap ist **nach Norden ausgerichtet** (Aussage des Users). Der Spieler steht in ihrer Mitte, bei 2560×1440 auf
+  **(2365, 243)**, sichtbarer Radius ≈ 110 px. Bezogen auf die Fensterhöhe sind das 0,135 h vom rechten Rand,
+  0,169 h von oben, Radius 0,076 h (`MinimapHeading.Default*`).
+- Der **Sichtkegel** ist ein schwach aufgehellter Keil. Seine **zwei Kanten sind helle radiale Linien** (Luma 120–180,
+  Karte daneben 15–70). Öffnungswinkel in allen 80 sicher erkannten Bildern **108–114°**.
+- Der **weiße Spielerpfeil** ist etwas anderes: Er zeigt die Ausrichtung des Charakters. In Bild 112 zeigte er nach
+  Nordwest, während der Kegel nach Südsüdwest lag (Kamera gedreht, Charakter stand). Für einen Pfeil auf dem
+  Bildschirm zählt die Kamera, also der Kegel.
+- Erkennung (`ViewConeDetector`): je Grad die Linienstärke (Strahl minus Mittel zweier Parallelstrahlen ±4 px), das
+  35. Perzentil über 45–95 % des Radius, dann das stärkste Kantenpaar mit 100–122° Abstand. Die Winkelhalbierende
+  ist die Blickrichtung.
+- Trennschärfe: echte Kegel erreichen 11–77, Bilder ohne Minimap (Skill-Fenster, Inventar, Ladebildschirm) höchstens
+  8,4 bzw. scheitern am Öffnungswinkel. Die Schwelle liegt deshalb bei **12**.
+- Robustheit: 4 px Versatz der Mitte kosten im Mittel ~1° (max. 3°), ein um ±10 % falscher Radius < 1°.
+- Kosten: Abgreifen des Ausschnitts per GDI ~6 ms (max. 17 ms), Erkennung ~3 ms. Das Radar liest mit ~12 Hz in einem
+  eigenen Thread, der Pfeil wird mit ~30 Hz gezeichnet und geglättet.
+- Live geprüft (Replay `20261013_114345` bei 200 s, Pfeil über dem Spiel): Kegel in Aullaeu Village erkannt
+  (101°, Stärke 28), Pfeilfenster mittig auf 40 % Höhe über dem Charakter.
+- Feldtest 1 (2026-11-07, 26 min, Logger neben dem Release-Radar): Norden −Y bestätigt (91 % der Laufabschnitte
+  innerhalb ±35° der Kamera, Median 2°), Pfeil beim Anlauf auf einen Cube im Median 10° daneben, Kegel in 87 % der
+  Spielbilder erkannt, längere Aussetzer nur bei Ladebildschirmen.
+- Feldtest 2 (2026-11-07, ~2½ h, 4 Cubes, 2 selbst geöffnet, Pfeil 2–13° daneben): Kegel nur in 77 % erkannt, in
+  **Verteron (Karte 1010) nur 63 %**, in kleineren Gebieten 89–97 %. Gespeicherte Ausschnitte der Aussetzer zeigen: Der
+  Kegel wird in die richtige Richtung und mit passender Breite gefunden, nur sind seine Kanten auf dem hellen, gelben
+  Gelände blass (Stärke 4–12). Von 104 Aussetzern im Spiel hatten 99 die passende Breite, 76 eine Stärke ≥ 4.
+  Bilder mit offenem Mauszeiger (Menüs) lagen fast alle unter 2.
+- Daher `ViewConeTracker`: Schwache Kegel (Stärke ≥ 4, passende Breite) zählen, wenn sie höchstens 30° von der letzten
+  angenommenen Richtung abweichen und diese höchstens 1,5 s alt ist. Ohne laufende Spur starten 4 schwache Kegel mit
+  Stärke ≥ 9 innerhalb 1 s, die höchstens 6° auseinanderliegen, eine neue Spur. Auf der 167-Bilder-Aufnahme (mit Menüs
+  und Ladebildschirmen) nimmt die Regel nur 3 schwache Bilder zusätzlich an, alle passend zu den Nachbarbildern, und
+  keines ohne Minimap. Live (8,5 min Spiel, fast nur Verteron, Logger mit derselben Regel): erkannt 84 % → **92 %**,
+  Laufrichtung gegen Kamera in 96 % von 55 Abschnitten innerhalb ±35° (Median 2,8°). Bei ruhiger Kamera weichen
+  schwache Messungen im Median 3,6° (max. 7°) von den umliegenden sicheren ab.
+- Offen: Andere Oberflächengrößen und Seitenverhältnisse sind ungeprüft („Minimap suchen“ findet die Lage selbst);
+  ob „Norden“ des Radars zur Minimap passt, zeigt sich am Pfeil (dreht er 90°/180° daneben, Norden umstellen).
+
 ## COMMUNITY / HYPOTHESEN (Stand 2026-10-13, Quellen unten)
 
 | Opcode | Bedeutung | Layout | Quelle | Status |

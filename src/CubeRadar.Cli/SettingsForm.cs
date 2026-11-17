@@ -45,7 +45,8 @@ internal sealed class SettingsForm : Form
     [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
 
-    public SettingsForm(RadarSettings settings, OverlayActions actions, Action applied, Action resetPosition, Action confirmUpdate)
+    public SettingsForm(RadarSettings settings, OverlayActions actions, Action applied, Action resetPosition, Action confirmUpdate,
+        MinimapHeading heading, Action resetArrowPosition)
     {
         Icon = OverlayWindow.AppIcon();
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -210,6 +211,15 @@ internal sealed class SettingsForm : Form
 
         // ---- overlay look
         Section("settings.overlaySection");
+        var mode = Combo();
+        var modeIndex = Math.Max(0, Array.FindIndex(OverlayWindow.Modes, m => m.Value == settings.OverlayMode));
+        mode.SelectedIndexChanged += (_, _) =>
+        {
+            if (_applying || mode.SelectedIndex < 0) return;
+            settings.OverlayMode = OverlayWindow.Modes[mode.SelectedIndex].Value;
+            Save();
+        };
+        Row("settings.display", mode);
         var mapCubes = Check("settings.showMapCubes", settings.ShowMapCubes);
         mapCubes.CheckedChanged += (_, _) => { settings.ShowMapCubes = mapCubes.Checked; Save(); };
         Full(mapCubes);
@@ -263,6 +273,66 @@ internal sealed class SettingsForm : Form
         };
         Row("settings.north", north);
         Full(Hint("settings.northHint"));
+
+        // ---- arrow over the character
+        Section("settings.arrowSection");
+        int[] arrowScales = [75, 100, 125, 150, 200];
+        var arrowScale = Combo();
+        var arrowScaleIndex = Array.IndexOf(arrowScales, settings.ArrowScalePct);
+        if (arrowScaleIndex < 0) arrowScaleIndex = Array.IndexOf(arrowScales, 100);
+        arrowScale.SelectedIndexChanged += (_, _) =>
+        {
+            if (_applying || arrowScale.SelectedIndex < 0) return;
+            settings.ArrowScalePct = arrowScales[arrowScale.SelectedIndex];
+            Save();
+        };
+        Row("settings.size", arrowScale);
+        Opacity("settings.arrowOpacity", settings.ArrowOpacityPct, v => settings.ArrowOpacityPct = v);
+        var arrowStatus = new Label
+        {
+            AutoSize = true, ForeColor = Muted, MaximumSize = new Size(480, 0), Margin = new Padding(0, 4, 0, 2),
+            Text = heading.Status,
+        };
+        var arrowPoll = new System.Windows.Forms.Timer { Interval = 300 };
+        var calibrating = false;
+        arrowPoll.Tick += (_, _) =>
+        {
+            if (!calibrating && !IsDisposed) arrowStatus.Text = heading.Status;
+        };
+        arrowPoll.Start();
+        Disposed += (_, _) => arrowPoll.Dispose();
+        var findMinimap = Btn("settings.findMinimap");
+        findMinimap.Click += async (_, _) =>
+        {
+            calibrating = true;
+            findMinimap.Enabled = false;
+            arrowStatus.Text = UiText.T("heading.search");
+            try
+            {
+                var text = await heading.CalibrateAsync();
+                if (!IsDisposed) arrowStatus.Text = text;
+            }
+            finally
+            {
+                if (!IsDisposed) findMinimap.Enabled = true;
+                await Task.Delay(4_000); // leave the result readable before the live status takes over again
+                calibrating = false;
+            }
+        };
+        var standardMinimap = Btn("settings.minimapDefault");
+        standardMinimap.Click += (_, _) =>
+        {
+            heading.ResetCalibration();
+            arrowStatus.Text = heading.Status;
+        };
+        var resetArrow = Btn("settings.resetArrow");
+        resetArrow.Click += (_, _) => resetArrowPosition();
+        var arrowTools = Flow(findMinimap, standardMinimap, resetArrow);
+        arrowTools.WrapContents = true;
+        arrowTools.MaximumSize = new Size(480, 0);
+        Full(arrowStatus);
+        Full(arrowTools);
+        Full(Hint("settings.arrowHint"));
 
         // ---- visibility
         Section("settings.visibleSection");
@@ -351,6 +421,9 @@ internal sealed class SettingsForm : Form
                     faction.SelectedIndex < 0 ? factionIndex : faction.SelectedIndex);
             Refill(north, Norths.Select(n => n.Key.StartsWith("settings.", StringComparison.Ordinal) ? UiText.T(n.Key) : n.Key),
                 north.SelectedIndex < 0 ? northIndex : north.SelectedIndex);
+            Refill(mode, OverlayWindow.Modes.Select(m => UiText.T(m.Key)), mode.SelectedIndex < 0 ? modeIndex : mode.SelectedIndex);
+            Refill(arrowScale, arrowScales.Select(s => $"{s} %"), arrowScale.SelectedIndex < 0 ? arrowScaleIndex : arrowScale.SelectedIndex);
+            if (!calibrating) arrowStatus.Text = heading.Status;
             if (updateState is not null && actions.Updater is { } current)
             {
                 updateState.Text = UiText.T("settings.installed", Updater.Current.ToString(3), current.State);
@@ -423,7 +496,8 @@ internal sealed class SettingsForm : Form
     {
         var t = new Thread(() =>
         {
-            using var form = new SettingsForm(settings, actions, () => { }, () => { }, () => { })
+            using var heading = new MinimapHeading(settings);
+            using var form = new SettingsForm(settings, actions, () => { }, () => { }, () => { }, heading, () => { })
             {
                 StartPosition = FormStartPosition.Manual,
                 Location = new Point(-30_000, -30_000),

@@ -4,14 +4,18 @@
 
 **Cube Radar** is a mini-radar overlay for **Aion 2 (Global)** that shows live where **Hidden Cubes** are: distance,
 direction and height. It reads server→client traffic with Npcap, the same way Wireshark does. It does no memory
-reading and no injection, and it sends nothing to the game. The only internet connection is the optional update check
+reading and no injection, and it sends nothing to the game. The optional arrow mode also reads the minimap's pixels
+on screen, like a screenshot of that spot. The only internet connection is the optional update check
 on GitHub (the finished exe only).
 
-The interface is Russian by default. English is a switch in the settings and in the web view. The
-[guide](docs/ANLEITUNG.md) stays German.
+This project is a fork of [dr89mh/aion2-cube-radar](https://github.com/dr89mh/aion2-cube-radar).
+
+The interface is Russian by default. English is a switch in the settings and in the web view.
 
 - **Mini-radar over the game:** nearby Hidden Cubes with distance, direction and height (▲ above you, ▼ below you),
   and a sound for every new cube
+- **Arrow over the character (optional):** a green arrow points to the nearest cube, matching where the camera looks.
+  That direction is not in the traffic; the arrow reads it from the minimap's pixels (the bright view cone)
 - **A status for each cube:** visible, out of view, being opened, opened, gone
 - **Enemies on the same radar:** red diamonds and a list with name, faction, PvP rank and distance (Global/Abyss,
   first test version). Five rank codes are checked against screenshots; the rest of the assumed order is marked with `*`
@@ -26,7 +30,7 @@ The Windows 10/11 (64-bit) build is on [**Releases**](https://github.com/Asseylu
 download `Cube.Radar.exe` and double-click it. Nothing else has to be installed; .NET is included. You do need
 [Npcap](https://npcap.com) (the installer with its default options). On startup Windows asks for administrator rights
 so the overlay can see the Alt key (this can be turned off; see below). How to read and use the mini-radar is in the
-**[guide](docs/ANLEITUNG.md)** (German). From version 0.8.0 the radar says so when a newer version exists and updates
+**[guide](docs/ANLEITUNG.md)**. From version 0.8.0 the radar says so when a newer version exists and updates
 itself on click ([Updates](docs/ANLEITUNG.md#8-updates)).
 
 > **Warning:** According to another tool author, NCSOFT support treats software that reads game data as a violation
@@ -42,6 +46,7 @@ send radius ≈ 100 m). Your own position comes from four event-driven sources. 
 |---|---|
 | `src/CubeRadar.Core` | Capture (Npcap/SharpPcap), flow detection, TCP reassembly, framing/LZ4 (derived from cyberbadger6969/aion2-dps-meter, GPL-3.0), pcapng writer, JSONL dump, census |
 | `src/CubeRadar.Core/Radar` | `RadarEngine` (cube status, own id/position, ring fix, template learning), SQLite store, spot index |
+| `src/CubeRadar.Core/Minimap` | `ViewConeDetector`: camera direction from the minimap view cone (arrow mode) |
 | `src/CubeRadar.Cli` | `cuberadar`: `radar`, `dump live`, `dump <file>`, `census`, `devices`, `conns`; markers via a global hotkey or the console; web UI in `wwwroot/` |
 | `tests/CubeRadar.Tests` | xunit: synthetic framing tests, pcapng round trip, real stream fixtures |
 | `tools/` | Python (stdlib only): `a2wire.py` (independent decoder), `census.py`, `crosscheck.py`, `make_fixture.py`, `objects.py` (object lifetime per template), `radius.py` (send radius), `selfscan.py` (f32 triplet scan for your own position), `selftrack.py` (own position track, CSV/SVG), `ringfix.py` (fallback estimate) |
